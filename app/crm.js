@@ -145,9 +145,11 @@ export default function CRM() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const all = await supaFetch("atm_companies?select=category,email,phone,estimated_atm_count");
-        const active = all.filter(c => !["dead_url","bank","not_atm","dead_url_maybe_atm"].includes(c.category));
-        setStats({ total: active.length, withEmail: active.filter(c => c.email).length, withPhone: active.filter(c => c.phone).length, withAtmCount: active.filter(c => c.estimated_atm_count).length, confirmed: active.filter(c => c.category === "confirmed_atm").length, operators: active.filter(c => c.category === "operator").length });
+        const data = await supaFetch("crm_stats?select=*");
+        if (data && data[0]) {
+          const s = data[0];
+          setStats({ total: s.total_active, withEmail: s.with_email, withPhone: s.with_phone, withAtmCount: s.with_atm_count, confirmed: s.confirmed_atm, operators: s.operators });
+        }
       } catch(e) { console.error(e); }
     }
     loadStats();
