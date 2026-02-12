@@ -15,7 +15,7 @@ const STATUSES = [
   { v: "dead", l: "Dead", c: "#374151", b: "#1a1a1a" },
 ];
 const CATS = ["all","confirmed_atm","operator","likely_related","services","maybe_related","manufacturer","processor"];
-const SEGS = ["all","seller","buyer","unknown"];
+const SEGS = ["all","seller","buyer","both","unknown"];
 const STAGES = [
   { v: "prospect", l: "Prospect", c: "#3b82f6" },
   { v: "contacted", l: "Contacted", c: "#8b5cf6" },
@@ -60,7 +60,7 @@ function Badge({ status }) {
   return <span style={{ background: s.b, color: s.c, border: "1px solid " + s.c + "40", padding: "2px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, letterSpacing: "0.5px", textTransform: "uppercase", whiteSpace: "nowrap" }}>{s.l}</span>;
 }
 function SegBadge({ segment }) {
-  const m = { seller: { c: "#ef4444", b: "#4a2020" }, buyer: { c: "#10b981", b: "#1a3a2a" }, unknown: { c: "#64748b", b: "#1a1f2e" } };
+  const m = { seller: { c: "#ef4444", b: "#4a2020" }, buyer: { c: "#10b981", b: "#1a3a2a" }, both: { c: "#f59e0b", b: "#4a3520" }, unknown: { c: "#64748b", b: "#1a1f2e" } };
   const s = m[segment] || m.unknown;
   return <span style={{ background: s.b, color: s.c, border: "1px solid " + s.c + "40", padding: "1px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600, textTransform: "uppercase" }}>{segment || "unknown"}</span>;
 }
@@ -107,7 +107,7 @@ function PipelineColumn({ stage, deals, onDealClick }) {
   );
 }
 
-function DealDetail({ deal, onClose, onUpdate }) {
+function DealDetail({ deal, onClose, onUpdate, onDelete }) {
   const [stage, setStage] = useState(deal.stage);
   const [name, setName] = useState(deal.deal_name || "");
   const [atmCount, setAtmCount] = useState(deal.atm_count || "");
@@ -228,7 +228,10 @@ function DealDetail({ deal, onClose, onUpdate }) {
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={5} style={{ ...inp, resize: "vertical" }} />
       </div>
 
-      <button onClick={save} disabled={saving} style={{ width: "100%", background: "#10b981", color: "#fff", border: "none", padding: 12, borderRadius: 6, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>{saving ? "Saving..." : "Save Deal"}</button>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={save} disabled={saving} style={{ flex: 1, background: "#10b981", color: "#fff", border: "none", padding: 12, borderRadius: 6, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>{saving ? "Saving..." : "Save Deal"}</button>
+        <button onClick={() => { if (confirm("Delete this deal? This cannot be undone.")) onDelete(deal.id); }} style={{ background: "#4a2020", color: "#ef4444", border: "1px solid #ef444440", padding: "12px 16px", borderRadius: 6, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Delete</button>
+      </div>
     </div>
   );
 }
@@ -286,7 +289,13 @@ function Pipeline() {
         </div>
       )}
 
-      {selected && <DealDetail deal={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate} />}
+      {selected && <DealDetail deal={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate} onDelete={async (id) => {
+        try {
+          await fetch(SB + "/rest/v1/atm_deals?id=eq." + id, { method: "DELETE", headers: H });
+          setDeals(p => p.filter(d => d.id !== id));
+          setSelected(null);
+        } catch (e) { console.error(e); }
+      }} />}
     </div>
   );
 }
@@ -320,12 +329,68 @@ function Row({ co, onClick, sel }) {
   );
 }
 
-function ContactCard({ contact }) {
+function ContactCard({ contact, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [firstName, setFirstName] = useState(contact.first_name || "");
+  const [lastName, setLastName] = useState(contact.last_name || "");
+  const [email, setEmail] = useState(contact.email || "");
+  const [phone, setPhone] = useState(contact.phone || "");
+  const [tags, setTags] = useState(contact.tags || "");
+  const [seg, setSeg] = useState(contact.segment || "unknown");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const body = { first_name: firstName || null, last_name: lastName || null, email: email || null, phone: phone || null, tags: tags || null, segment: seg };
+      await apiPatch("atm_contacts?id=eq." + contact.id, body);
+      onSave({ ...contact, ...body });
+      setEditing(false);
+    } catch (e) { console.error(e); }
+    setSaving(false);
+  };
+
+  const del = async () => {
+    if (!confirm("Delete this contact?")) return;
+    try {
+      await fetch(SB + "/rest/v1/atm_contacts?id=eq." + contact.id, { method: "DELETE", headers: H });
+      onDelete(contact.id);
+    } catch (e) { console.error(e); }
+  };
+
+  const inp = { width: "100%", background: "#111827", color: "#e2e8f0", border: "1px solid #334155", padding: 5, borderRadius: 4, fontSize: 12, boxSizing: "border-box" };
+
+  if (editing) return (
+    <div style={{ background: "#1a1f2e", borderRadius: 6, padding: 10, marginBottom: 6, border: "1px solid #3b82f640" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+        <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="First name" style={inp} />
+        <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Last name" style={inp} />
+      </div>
+      <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={{ ...inp, marginBottom: 6 }} />
+      <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone" style={{ ...inp, marginBottom: 6 }} />
+      <input value={tags} onChange={e => setTags(e.target.value)} placeholder="Tags (comma separated)" style={{ ...inp, marginBottom: 6 }} />
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>Segment</div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {["seller","buyer","both","unknown"].map(s => <button key={s} onClick={() => setSeg(s)} style={{ background: seg === s ? (s === "seller" ? "#4a2020" : s === "buyer" ? "#1a3a2a" : s === "both" ? "#4a3520" : "#1a1f2e") : "#111827", color: seg === s ? (s === "seller" ? "#ef4444" : s === "buyer" ? "#10b981" : s === "both" ? "#f59e0b" : "#64748b") : "#475569", border: "1px solid #334155", padding: "3px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", textTransform: "uppercase" }}>{s}</button>)}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={save} disabled={saving} style={{ background: "#10b981", color: "#fff", border: "none", padding: "5px 14px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{saving ? "..." : "Save"}</button>
+        <button onClick={() => setEditing(false)} style={{ background: "#1a1f2e", color: "#94a3b8", border: "1px solid #334155", padding: "5px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Cancel</button>
+        <button onClick={del} style={{ background: "#4a2020", color: "#ef4444", border: "1px solid #ef444440", padding: "5px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer", marginLeft: "auto" }}>Delete</button>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ background: "#1a1f2e", borderRadius: 6, padding: 10, marginBottom: 6, border: "1px solid #334155" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600 }}>{contact.first_name || ""} {contact.last_name || ""}{!contact.first_name && !contact.last_name && contact.name ? contact.name : ""}</span>
-        <SegBadge segment={contact.segment} />
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <SegBadge segment={contact.segment} />
+          <button onClick={() => setEditing(true)} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 11, padding: "2px 4px" }}>&#9998;</button>
+        </div>
       </div>
       <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>{contact.email}</div>
       {contact.phone && <div style={{ fontSize: 12, color: "#94a3b8" }}>{contact.phone}</div>}
@@ -333,6 +398,51 @@ function ContactCard({ contact }) {
       <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
         {contact.email && <a href={"mailto:" + contact.email} style={{ background: "#1e3a5f", color: "#3b82f6", padding: "3px 10px", borderRadius: 4, fontSize: 11, textDecoration: "none", fontWeight: 600 }}>&#9993; Email</a>}
         {contact.phone && <a href={"tel:" + contact.phone} style={{ background: "#1a3a2a", color: "#10b981", padding: "3px 10px", borderRadius: 4, fontSize: 11, textDecoration: "none", fontWeight: 600 }}>&#9742; Call</a>}
+      </div>
+    </div>
+  );
+}
+
+function AddContactForm({ companyId, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [seg, setSeg] = useState("unknown");
+  const [saving, setSaving] = useState(false);
+  const inp = { width: "100%", background: "#111827", color: "#e2e8f0", border: "1px solid #334155", padding: 5, borderRadius: 4, fontSize: 12, boxSizing: "border-box" };
+
+  const save = async () => {
+    if (!email && !phone && !firstName) return;
+    setSaving(true);
+    try {
+      const body = { company_id: companyId, first_name: firstName || null, last_name: lastName || null, email: email || null, phone: phone || null, segment: seg, source: "manual" };
+      const result = await apiPost("atm_contacts", body);
+      onAdd(result[0] || { ...body, id: "temp-" + Date.now() });
+      setFirstName(""); setLastName(""); setEmail(""); setPhone(""); setSeg("unknown"); setOpen(false);
+    } catch (e) { console.error(e); }
+    setSaving(false);
+  };
+
+  if (!open) return <button onClick={() => setOpen(true)} style={{ background: "#1e3a5f", color: "#3b82f6", border: "1px solid #3b82f640", padding: "4px 12px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", marginTop: 4 }}>+ Add Contact</button>;
+
+  return (
+    <div style={{ background: "#1a1f2e", borderRadius: 6, padding: 10, marginTop: 6, border: "1px solid #3b82f640" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+        <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="First name" style={inp} />
+        <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Last name" style={inp} />
+      </div>
+      <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={{ ...inp, marginBottom: 6 }} />
+      <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone" style={{ ...inp, marginBottom: 6 }} />
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ display: "flex", gap: 4 }}>
+          {["seller","buyer","both","unknown"].map(s => <button key={s} onClick={() => setSeg(s)} style={{ background: seg === s ? (s === "seller" ? "#4a2020" : s === "buyer" ? "#1a3a2a" : s === "both" ? "#4a3520" : "#1a1f2e") : "#111827", color: seg === s ? (s === "seller" ? "#ef4444" : s === "buyer" ? "#10b981" : s === "both" ? "#f59e0b" : "#64748b") : "#475569", border: "1px solid #334155", padding: "3px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", textTransform: "uppercase" }}>{s}</button>)}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={save} disabled={saving} style={{ background: "#10b981", color: "#fff", border: "none", padding: "5px 14px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{saving ? "..." : "Save"}</button>
+        <button onClick={() => setOpen(false)} style={{ background: "#1a1f2e", color: "#94a3b8", border: "1px solid #334155", padding: "5px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Cancel</button>
       </div>
     </div>
   );
@@ -444,7 +554,7 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
         <div style={{ flex: 1 }}><label style={ls}>Status</label>{editing ? <select value={status} onChange={e => setStatus(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 12 }}>{STATUSES.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}</select> : <Badge status={status} />}</div>
-        <div style={{ flex: 1 }}><label style={ls}>Segment</label>{editing ? <select value={segment} onChange={e => setSegment(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 12 }}><option value="seller">Seller</option><option value="buyer">Buyer</option><option value="unknown">Unknown</option></select> : <SegBadge segment={segment} />}</div>
+        <div style={{ flex: 1 }}><label style={ls}>Segment</label>{editing ? <select value={segment} onChange={e => setSegment(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 12 }}><option value="seller">Seller</option><option value="buyer">Buyer</option><option value="both">Both</option><option value="unknown">Unknown</option></select> : <SegBadge segment={segment} />}</div>
         <div style={{ flex: 1 }}><label style={ls}>Priority</label>{editing ? <select value={priority} onChange={e => setPriority(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 12 }}><option value="">None</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select> : <span style={vs}>{priority ? priority.charAt(0).toUpperCase() + priority.slice(1) : "\u2014"}</span>}</div>
       </div>
 
@@ -462,7 +572,8 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
         <label style={{ ...ls, marginBottom: 8 }}>Contacts ({contacts.length})</label>
         {loadingC ? <div style={{ color: "#475569", fontSize: 12 }}>Loading...</div> :
           contacts.length === 0 ? <div style={{ color: "#475569", fontSize: 12 }}>No linked contacts</div> :
-          contacts.map((c, i) => <ContactCard key={i} contact={c} />)}
+          contacts.map((c, i) => <ContactCard key={c.id || i} contact={c} onSave={(updated) => setContacts(p => p.map(x => x.id === updated.id ? updated : x))} onDelete={(id) => setContacts(p => p.filter(x => x.id !== id))} />)}
+        <AddContactForm companyId={co.id} onAdd={(c) => setContacts(p => [...p, c])} />
       </div>
 
       {/* Activity Log */}
