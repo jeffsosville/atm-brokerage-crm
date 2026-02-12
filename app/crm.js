@@ -25,6 +25,30 @@ async function api(path) {
   return r.json();
 }
 
+function today() { return new Date().toISOString().split("T")[0]; }
+
+function followUpStatus(dateStr) {
+  if (!dateStr) return null;
+  const d = dateStr.split("T")[0];
+  const t = today();
+  if (d < t) return "overdue";
+  if (d === t) return "due";
+  return "upcoming";
+}
+
+function FollowUpBadge({ dateStr }) {
+  const s = followUpStatus(dateStr);
+  if (!s) return null;
+  const d = dateStr.split("T")[0];
+  const cfg = {
+    overdue: { c: "#ef4444", b: "#4a2020", l: "Overdue" },
+    due: { c: "#f59e0b", b: "#4a3520", l: "Due Today" },
+    upcoming: { c: "#3b82f6", b: "#1e3a5f", l: d },
+  };
+  const x = cfg[s];
+  return <span style={{ background: x.b, color: x.c, border: "1px solid " + x.c + "40", padding: "1px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>{x.l}</span>;
+}
+
 function Badge({ status }) {
   const s = STATUSES.find(x => x.v === status) || STATUSES[0];
   return <span style={{ background: s.b, color: s.c, border: "1px solid " + s.c + "40", padding: "2px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, letterSpacing: "0.5px", textTransform: "uppercase", whiteSpace: "nowrap" }}>{s.l}</span>;
@@ -45,6 +69,7 @@ function Row({ co, onClick, sel }) {
       <td style={{ padding: "10px 12px", maxWidth: 220 }}>
         <div style={{ fontWeight: 600, color: "#e2e8f0", fontSize: 13 }}>{co.company_name}</div>
         {co.dba_name && <div style={{ fontSize: 11, color: "#64748b" }}>DBA: {co.dba_name}</div>}
+        {co.next_followup_at && <div style={{ marginTop: 3 }}><FollowUpBadge dateStr={co.next_followup_at} /></div>}
       </td>
       <td style={{ padding: "10px 12px", fontSize: 12, color: "#94a3b8" }}>{co.city && co.state ? co.city + ", " + co.state : co.state || "\u2014"}</td>
       <td style={{ padding: "10px 12px" }}><Badge status={co.status || "new"} /></td>
@@ -83,12 +108,17 @@ function ContactCard({ contact }) {
   );
 }
 
+function QuickDateBtn({ label, days, onClick }) {
+  return <button onClick={() => onClick(days)} style={{ background: "#1a1f2e", color: "#94a3b8", border: "1px solid #334155", padding: "4px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>{label}</button>;
+}
+
 function Detail({ co, onClose, onUpdate }) {
   const [editing, setEditing] = useState(false);
   const [status, setStatus] = useState(co.status || "new");
   const [segment, setSegment] = useState(co.segment || "unknown");
   const [priority, setPriority] = useState(co.priority || "");
   const [notes, setNotes] = useState(co.notes || "");
+  const [followup, setFollowup] = useState(co.next_followup_at ? co.next_followup_at.split("T")[0] : "");
   const [saving, setSaving] = useState(false);
   const [contacts, setContacts] = useState([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
@@ -96,6 +126,7 @@ function Detail({ co, onClose, onUpdate }) {
   useEffect(() => {
     setStatus(co.status || "new"); setSegment(co.segment || "unknown");
     setPriority(co.priority || ""); setNotes(co.notes || ""); setEditing(false);
+    setFollowup(co.next_followup_at ? co.next_followup_at.split("T")[0] : "");
     setLoadingContacts(true);
     api("atm_contacts?company_id=eq." + co.id + "&order=segment.asc,email.asc&limit=50")
       .then(data => setContacts(data))
@@ -103,13 +134,28 @@ function Detail({ co, onClose, onUpdate }) {
       .finally(() => setLoadingContacts(false));
   }, [co.id]);
 
+  const setFollowupDays = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    setFollowup(d.toISOString().split("T")[0]);
+  };
+
   const save = async () => {
     setSaving(true);
     try {
-      await fetch(SUPABASE_URL + "/rest/v1/atm_companies?id=eq." + co.id, { method: "PATCH", headers: H, body: JSON.stringify({ status, segment, priority, notes }) });
-      onUpdate({ ...co, status, segment, priority, notes });
+      const body = { status, segment, priority, notes, next_followup_at: followup || null, last_contacted_at: new Date().toISOString() };
+      await fetch(SUPABASE_URL + "/rest/v1/atm_companies?id=eq." + co.id, { method: "PATCH", headers: H, body: JSON.stringify(body) });
+      onUpdate({ ...co, ...body });
     } catch (e) { console.error(e); }
     setSaving(false); setEditing(false);
+  };
+
+  const clearFollowup = async () => {
+    try {
+      await fetch(SUPABASE_URL + "/rest/v1/atm_companies?id=eq." + co.id, { method: "PATCH", headers: H, body: JSON.stringify({ next_followup_at: null }) });
+      setFollowup("");
+      onUpdate({ ...co, next_followup_at: null });
+    } catch (e) { console.error(e); }
   };
 
   const ls = { fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4, display: "block" };
@@ -130,6 +176,29 @@ function Detail({ co, onClose, onUpdate }) {
         {co.phone && <a href={"tel:" + co.phone} style={{ background: "#1a3a2a", color: "#10b981", border: "1px solid #10b98140", padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, textDecoration: "none" }}>&#9742; Call</a>}
         {co.website && <a href={co.website} target="_blank" rel="noreferrer" style={{ background: "#4a3520", color: "#f59e0b", border: "1px solid #f59e0b40", padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, textDecoration: "none" }}>&#9679; Website</a>}
       </div>
+
+      {/* Follow-up section */}
+      <div style={{ background: followup && followUpStatus(followup) === "overdue" ? "#4a202040" : followup && followUpStatus(followup) === "due" ? "#4a352040" : "#111827", border: "1px solid " + (followup && followUpStatus(followup) === "overdue" ? "#ef444440" : followup && followUpStatus(followup) === "due" ? "#f59e0b40" : "#1e293b"), borderRadius: 8, padding: 12, marginBottom: 16 }}>
+        <label style={ls}>Follow-up</label>
+        {editing ? (
+          <div>
+            <input type="date" value={followup} onChange={e => setFollowup(e.target.value)} style={{ background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 13, marginBottom: 8, width: "100%", boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <QuickDateBtn label="Tomorrow" days={1} onClick={setFollowupDays} />
+              <QuickDateBtn label="3 Days" days={3} onClick={setFollowupDays} />
+              <QuickDateBtn label="1 Week" days={7} onClick={setFollowupDays} />
+              <QuickDateBtn label="2 Weeks" days={14} onClick={setFollowupDays} />
+              <QuickDateBtn label="1 Month" days={30} onClick={setFollowupDays} />
+              <button onClick={() => setFollowup("")} style={{ background: "#4a2020", color: "#ef4444", border: "1px solid #ef444440", padding: "4px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Clear</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {followup ? (<><FollowUpBadge dateStr={followup} /><span style={{ fontSize: 13, color: "#94a3b8" }}>{followup}</span><button onClick={clearFollowup} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 11 }}>&#10005;</button></>) : <span style={{ fontSize: 13, color: "#475569" }}>No follow-up set</span>}
+          </div>
+        )}
+      </div>
+
       <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
         <div style={{ flex: 1 }}>
           <label style={ls}>Status</label>
@@ -153,6 +222,7 @@ function Detail({ co, onClose, onUpdate }) {
         <div style={fs}><label style={ls}>Est. ATM Count</label><span style={{ ...vs, color: co.estimated_atm_count ? "#10b981" : "#475569", fontWeight: co.estimated_atm_count ? 700 : 400, fontSize: co.estimated_atm_count ? 18 : 14 }}>{co.estimated_atm_count ? co.estimated_atm_count.toLocaleString() : "\u2014"}</span></div>
         {co.year_founded && <div style={fs}><label style={ls}>Year Founded</label><span style={vs}>{co.year_founded}</span></div>}
         {co.employee_count && <div style={fs}><label style={ls}>Employees</label><span style={vs}>{co.employee_count}</span></div>}
+        {co.last_contacted_at && <div style={fs}><label style={ls}>Last Contacted</label><span style={vs}>{new Date(co.last_contacted_at).toLocaleDateString()}</span></div>}
       </div>
       <div style={{ marginBottom: 16 }}>
         <label style={{ ...ls, marginBottom: 8 }}>Contacts ({contacts.length})</label>
@@ -179,12 +249,14 @@ export default function CRM() {
   const [catFilter, setCatFilter] = useState("all");
   const [segFilter, setSegFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [followFilter, setFollowFilter] = useState("all");
   const [hasEmail, setHasEmail] = useState(false);
   const [hasPhone, setHasPhone] = useState(false);
   const [sortBy, setSortBy] = useState("atm_count");
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState({});
+  const [followStats, setFollowStats] = useState({ overdue: 0, due: 0, upcoming: 0 });
   const PS = 50;
 
   useEffect(() => {
@@ -194,16 +266,30 @@ export default function CRM() {
         setStats({ total: s.total_active, withEmail: s.with_email, withPhone: s.with_phone, withAtmCount: s.with_atm_count, confirmed: s.confirmed_atm, operators: s.operators });
       }
     }).catch(e => console.error(e));
+
+    // Load follow-up counts
+    const t = today();
+    Promise.all([
+      api("atm_companies?select=id&next_followup_at=lt." + t + "&next_followup_at=not.is.null&category=not.in.(dead_url,bank,not_atm,dead_url_maybe_atm)"),
+      api("atm_companies?select=id&next_followup_at=eq." + t + "&category=not.in.(dead_url,bank,not_atm,dead_url_maybe_atm)"),
+      api("atm_companies?select=id&next_followup_at=gt." + t + "&category=not.in.(dead_url,bank,not_atm,dead_url_maybe_atm)"),
+    ]).then(([overdue, due, upcoming]) => {
+      setFollowStats({ overdue: overdue.length, due: due.length, upcoming: upcoming.length });
+    }).catch(e => console.error(e));
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      let q = "atm_companies?select=*&order=" + (sortBy === "atm_count" ? "estimated_atm_count.desc.nullslast" : sortBy === "name" ? "company_name.asc" : sortBy === "city" ? "city.asc.nullslast" : "updated_at.desc") + "&offset=" + (page * PS) + "&limit=" + PS;
+      let q = "atm_companies?select=*&order=" + (sortBy === "atm_count" ? "estimated_atm_count.desc.nullslast" : sortBy === "name" ? "company_name.asc" : sortBy === "city" ? "city.asc.nullslast" : sortBy === "followup" ? "next_followup_at.asc.nullslast" : "updated_at.desc") + "&offset=" + (page * PS) + "&limit=" + PS;
       q += "&category=not.in.(dead_url,bank,not_atm,dead_url_maybe_atm)";
       if (catFilter !== "all") q += "&category=eq." + catFilter;
       if (segFilter !== "all") q += "&segment=eq." + segFilter;
       if (statusFilter !== "all") q += "&status=eq." + statusFilter;
+      if (followFilter === "overdue") q += "&next_followup_at=lt." + today() + "&next_followup_at=not.is.null";
+      if (followFilter === "due") q += "&next_followup_at=eq." + today();
+      if (followFilter === "due_or_overdue") q += "&next_followup_at=lte." + today() + "&next_followup_at=not.is.null";
+      if (followFilter === "has_followup") q += "&next_followup_at=not.is.null";
       if (hasEmail) q += "&email=not.is.null";
       if (hasPhone) q += "&phone=not.is.null";
       if (search) q += "&or=(company_name.ilike.*" + search + "*,city.ilike.*" + search + "*,state.ilike.*" + search + "*,notes.ilike.*" + search + "*)";
@@ -213,6 +299,10 @@ export default function CRM() {
       if (catFilter !== "all") cq += "&category=eq." + catFilter;
       if (segFilter !== "all") cq += "&segment=eq." + segFilter;
       if (statusFilter !== "all") cq += "&status=eq." + statusFilter;
+      if (followFilter === "overdue") cq += "&next_followup_at=lt." + today() + "&next_followup_at=not.is.null";
+      if (followFilter === "due") cq += "&next_followup_at=eq." + today();
+      if (followFilter === "due_or_overdue") cq += "&next_followup_at=lte." + today() + "&next_followup_at=not.is.null";
+      if (followFilter === "has_followup") cq += "&next_followup_at=not.is.null";
       if (hasEmail) cq += "&email=not.is.null";
       if (hasPhone) cq += "&phone=not.is.null";
       if (search) cq += "&or=(company_name.ilike.*" + search + "*,city.ilike.*" + search + "*,state.ilike.*" + search + "*,notes.ilike.*" + search + "*)";
@@ -221,16 +311,16 @@ export default function CRM() {
       if (rng) setTotal(parseInt(rng.split("/")[1]) || 0);
     } catch (e) { console.error("Load error:", e); }
     setLoading(false);
-  }, [page, catFilter, segFilter, statusFilter, hasEmail, hasPhone, search, sortBy]);
+  }, [page, catFilter, segFilter, statusFilter, followFilter, hasEmail, hasPhone, search, sortBy]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(0); }, [catFilter, segFilter, statusFilter, hasEmail, hasPhone, search, sortBy]);
+  useEffect(() => { setPage(0); }, [catFilter, segFilter, statusFilter, followFilter, hasEmail, hasPhone, search, sortBy]);
 
   const upd = (u) => { setCompanies(p => p.map(c => c.id === u.id ? u : c)); setSelected(u); };
   const ss = { background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: "7px 10px", borderRadius: 4, fontSize: 12 };
 
-  const box = (label, value, color) => (
-    <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 8, padding: "12px 16px", flex: 1, minWidth: 110 }}>
+  const box = (label, value, color, onClick) => (
+    <div onClick={onClick} style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 8, padding: "12px 16px", flex: 1, minWidth: 100, cursor: onClick ? "pointer" : "default" }}>
       <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 700, color: color || "#e2e8f0" }}>{typeof value === "number" ? value.toLocaleString() : value}</div>
     </div>
@@ -246,19 +336,33 @@ export default function CRM() {
           </div>
           <input type="text" placeholder="Search companies, cities, states..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: 320, background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: "10px 14px", borderRadius: 6, fontSize: 13, outline: "none" }} />
         </div>
-        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
           {box("Total Active", stats.total || 0, "#e2e8f0")}
           {box("With Email", stats.withEmail || 0, "#3b82f6")}
           {box("With Phone", stats.withPhone || 0, "#10b981")}
-          {box("ATM Count Known", stats.withAtmCount || 0, "#f59e0b")}
           {box("Confirmed ATM", stats.confirmed || 0, "#ef4444")}
           {box("Operators", stats.operators || 0, "#8b5cf6")}
         </div>
+        {/* Follow-up alert bar */}
+        {(followStats.overdue > 0 || followStats.due > 0) && (
+          <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+            {followStats.overdue > 0 && box("Overdue", followStats.overdue, "#ef4444", () => { setFollowFilter("overdue"); setSortBy("followup"); })}
+            {followStats.due > 0 && box("Due Today", followStats.due, "#f59e0b", () => { setFollowFilter("due"); setSortBy("followup"); })}
+            {box("Upcoming", followStats.upcoming, "#3b82f6", () => { setFollowFilter("has_followup"); setSortBy("followup"); })}
+          </div>
+        )}
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <select value={catFilter} onChange={e => setCatFilter(e.target.value)} style={ss}><option value="all">All Categories</option>{CATS.filter(c => c !== "all").map(c => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}</select>
           <select value={segFilter} onChange={e => setSegFilter(e.target.value)} style={ss}><option value="all">All Segments</option>{SEGS.filter(s => s !== "all").map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}</select>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={ss}><option value="all">All Statuses</option>{STATUSES.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}</select>
-          <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={ss}><option value="atm_count">Sort: ATM Count &#8595;</option><option value="name">Sort: Name A-Z</option><option value="city">Sort: City A-Z</option><option value="recent">Sort: Recently Updated</option></select>
+          <select value={followFilter} onChange={e => setFollowFilter(e.target.value)} style={ss}>
+            <option value="all">All Follow-ups</option>
+            <option value="due_or_overdue">Due / Overdue</option>
+            <option value="overdue">Overdue Only</option>
+            <option value="due">Due Today</option>
+            <option value="has_followup">Has Follow-up</option>
+          </select>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={ss}><option value="atm_count">Sort: ATM Count &#8595;</option><option value="followup">Sort: Follow-up Date</option><option value="name">Sort: Name A-Z</option><option value="city">Sort: City A-Z</option><option value="recent">Sort: Recently Updated</option></select>
           <label style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><input type="checkbox" checked={hasEmail} onChange={e => setHasEmail(e.target.checked)} /> Has Email</label>
           <label style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><input type="checkbox" checked={hasPhone} onChange={e => setHasPhone(e.target.checked)} /> Has Phone</label>
           <button onClick={load} style={{ ...ss, cursor: "pointer", background: "#1e3a5f", color: "#3b82f6", border: "1px solid #3b82f640" }}>&#8635; Refresh</button>
