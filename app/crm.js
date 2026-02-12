@@ -464,6 +464,16 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
   const [logType, setLogType] = useState("call_made");
   const [logNote, setLogNote] = useState("");
   const [loggingActivity, setLoggingActivity] = useState(false);
+  const [compName, setCompName] = useState(co.company_name || "");
+  const [dba, setDba] = useState(co.dba_name || "");
+  const [city, setCity] = useState(co.city || "");
+  const [state, setState] = useState(co.state || "");
+  const [zip, setZip] = useState(co.zip || "");
+  const [phone, setPhone] = useState(co.phone || "");
+  const [email, setEmail] = useState(co.email || "");
+  const [website, setWebsite] = useState(co.website || "");
+  const [category, setCategory] = useState(co.category || "");
+  const [atmCount, setAtmCount] = useState(co.estimated_atm_count || "");
 
   const loadActivities = () => {
     setLoadingA(true);
@@ -476,6 +486,11 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
     setPriority(co.priority || ""); setNotes(co.notes || "");
     setFollowup(co.next_followup_at ? co.next_followup_at.split("T")[0] : ""); setEditing(false);
     setShowLogForm(false); setLogNote("");
+    setCompName(co.company_name || ""); setDba(co.dba_name || "");
+    setCity(co.city || ""); setState(co.state || ""); setZip(co.zip || "");
+    setPhone(co.phone || ""); setEmail(co.email || "");
+    setWebsite(co.website || ""); setCategory(co.category || "");
+    setAtmCount(co.estimated_atm_count || "");
     setLoadingC(true);
     api("atm_contacts?company_id=eq." + co.id + "&order=segment.asc,email.asc&limit=50")
       .then(d => setContacts(d)).catch(e => console.error(e)).finally(() => setLoadingC(false));
@@ -501,7 +516,10 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
   const save = async () => {
     setSaving(true);
     try {
-      const body = { status, segment, priority, notes, next_followup_at: followup || null, last_contacted_at: new Date().toISOString() };
+      const body = { status, segment, priority, notes, next_followup_at: followup || null, last_contacted_at: new Date().toISOString(),
+        company_name: compName || null, dba_name: dba || null, city: city || null, state: state || null, zip: zip || null,
+        phone: phone || null, email: email || null, website: website || null, category: category || null,
+        estimated_atm_count: atmCount ? Number(atmCount) : null };
       await apiPatch("atm_companies?id=eq." + co.id, body);
       if (status !== (co.status || "new")) {
         await logActivity("status_changed", "Status: " + (co.status || "new") + " \u2192 " + status, null);
@@ -559,13 +577,32 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
       </div>
 
       <div style={{ background: "#111827", borderRadius: 8, padding: 14, marginBottom: 16 }}>
-        <div style={fs}><label style={ls}>Location</label><span style={vs}>{[co.city, co.state, co.zip].filter(Boolean).join(", ") || "\u2014"}</span></div>
-        <div style={fs}><label style={ls}>Phone</label><span style={vs}>{co.phone || "\u2014"}</span></div>
-        <div style={fs}><label style={ls}>Email</label><span style={{ ...vs, wordBreak: "break-all" }}>{co.email || "\u2014"}</span></div>
-        <div style={fs}><label style={ls}>Website</label><span style={{ ...vs, wordBreak: "break-all" }}>{co.website || "\u2014"}</span></div>
-        <div style={fs}><label style={ls}>Category</label><span style={vs}>{co.category || "\u2014"}</span></div>
-        <div style={fs}><label style={ls}>Est. ATM Count</label><span style={{ ...vs, color: co.estimated_atm_count ? "#10b981" : "#475569", fontWeight: co.estimated_atm_count ? 700 : 400, fontSize: co.estimated_atm_count ? 18 : 14 }}>{co.estimated_atm_count ? co.estimated_atm_count.toLocaleString() : "\u2014"}</span></div>
-        {co.last_contacted_at && <div style={fs}><label style={ls}>Last Contacted</label><span style={vs}>{new Date(co.last_contacted_at).toLocaleDateString()}</span></div>}
+        {editing ? (<>
+          <div style={{ ...fs, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div><label style={ls}>Company Name</label><input value={compName} onChange={e => setCompName(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 13, boxSizing: "border-box" }} /></div>
+            <div><label style={ls}>DBA</label><input value={dba} onChange={e => setDba(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 13, boxSizing: "border-box" }} /></div>
+          </div>
+          <div style={{ ...fs, display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8 }}>
+            <div><label style={ls}>City</label><input value={city} onChange={e => setCity(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 13, boxSizing: "border-box" }} /></div>
+            <div><label style={ls}>State</label><input value={state} onChange={e => setState(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 13, boxSizing: "border-box" }} /></div>
+            <div><label style={ls}>Zip</label><input value={zip} onChange={e => setZip(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 13, boxSizing: "border-box" }} /></div>
+          </div>
+          <div style={fs}><label style={ls}>Phone</label><input value={phone} onChange={e => setPhone(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 13, boxSizing: "border-box" }} /></div>
+          <div style={fs}><label style={ls}>Email</label><input value={email} onChange={e => setEmail(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 13, boxSizing: "border-box" }} /></div>
+          <div style={fs}><label style={ls}>Website</label><input value={website} onChange={e => setWebsite(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 13, boxSizing: "border-box" }} /></div>
+          <div style={{ ...fs, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div><label style={ls}>Category</label><select value={category} onChange={e => setCategory(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 12 }}><option value="">None</option><option value="confirmed_atm">Confirmed ATM</option><option value="operator">Operator</option><option value="likely_related">Likely Related</option><option value="services">Services</option><option value="maybe_related">Maybe Related</option><option value="manufacturer">Manufacturer</option><option value="processor">Processor</option></select></div>
+            <div><label style={ls}>Est. ATM Count</label><input type="number" value={atmCount} onChange={e => setAtmCount(e.target.value)} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 6, borderRadius: 4, fontSize: 13, boxSizing: "border-box" }} /></div>
+          </div>
+        </>) : (<>
+          <div style={fs}><label style={ls}>Location</label><span style={vs}>{[co.city, co.state, co.zip].filter(Boolean).join(", ") || "\u2014"}</span></div>
+          <div style={fs}><label style={ls}>Phone</label><span style={vs}>{co.phone || "\u2014"}</span></div>
+          <div style={fs}><label style={ls}>Email</label><span style={{ ...vs, wordBreak: "break-all" }}>{co.email || "\u2014"}</span></div>
+          <div style={fs}><label style={ls}>Website</label><span style={{ ...vs, wordBreak: "break-all" }}>{co.website || "\u2014"}</span></div>
+          <div style={fs}><label style={ls}>Category</label><span style={vs}>{co.category || "\u2014"}</span></div>
+          <div style={fs}><label style={ls}>Est. ATM Count</label><span style={{ ...vs, color: co.estimated_atm_count ? "#10b981" : "#475569", fontWeight: co.estimated_atm_count ? 700 : 400, fontSize: co.estimated_atm_count ? 18 : 14 }}>{co.estimated_atm_count ? co.estimated_atm_count.toLocaleString() : "\u2014"}</span></div>
+          {co.last_contacted_at && <div style={fs}><label style={ls}>Last Contacted</label><span style={vs}>{new Date(co.last_contacted_at).toLocaleDateString()}</span></div>}
+        </>)}
       </div>
 
       <div style={{ marginBottom: 16 }}>
