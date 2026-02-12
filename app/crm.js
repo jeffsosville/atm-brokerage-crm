@@ -348,15 +348,43 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
   const [saving, setSaving] = useState(false);
   const [contacts, setContacts] = useState([]);
   const [loadingC, setLoadingC] = useState(false);
+  const [activities, setActivities] = useState([]);
+  const [loadingA, setLoadingA] = useState(false);
+  const [showLogForm, setShowLogForm] = useState(false);
+  const [logType, setLogType] = useState("call_made");
+  const [logNote, setLogNote] = useState("");
+  const [loggingActivity, setLoggingActivity] = useState(false);
+
+  const loadActivities = () => {
+    setLoadingA(true);
+    api("atm_activity_log?company_id=eq." + co.id + "&order=created_at.desc&limit=30")
+      .then(d => setActivities(d)).catch(e => console.error(e)).finally(() => setLoadingA(false));
+  };
 
   useEffect(() => {
     setStatus(co.status || "new"); setSegment(co.segment || "unknown");
     setPriority(co.priority || ""); setNotes(co.notes || "");
     setFollowup(co.next_followup_at ? co.next_followup_at.split("T")[0] : ""); setEditing(false);
+    setShowLogForm(false); setLogNote("");
     setLoadingC(true);
     api("atm_contacts?company_id=eq." + co.id + "&order=segment.asc,email.asc&limit=50")
       .then(d => setContacts(d)).catch(e => console.error(e)).finally(() => setLoadingC(false));
+    loadActivities();
   }, [co.id]);
+
+  const logActivity = async (type, subject, body) => {
+    try {
+      await apiPost("atm_activity_log", { company_id: co.id, type, channel: "manual", direction: type.includes("received") ? "inbound" : "outbound", subject: subject || null, body: body || null });
+      loadActivities();
+    } catch (e) { console.error(e); }
+  };
+
+  const submitLog = async () => {
+    setLoggingActivity(true);
+    const labels = { call_made: "Phone call", call_received: "Incoming call", email_sent: "Email sent", email_received: "Email received", note_added: "Note", meeting: "Meeting" };
+    await logActivity(logType, labels[logType], logNote);
+    setLogNote(""); setShowLogForm(false); setLoggingActivity(false);
+  };
 
   const setFollowupDays = (d) => { const x = new Date(); x.setDate(x.getDate() + d); setFollowup(x.toISOString().split("T")[0]); };
 
@@ -365,6 +393,9 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
     try {
       const body = { status, segment, priority, notes, next_followup_at: followup || null, last_contacted_at: new Date().toISOString() };
       await apiPatch("atm_companies?id=eq." + co.id, body);
+      if (status !== (co.status || "new")) {
+        await logActivity("status_changed", "Status: " + (co.status || "new") + " \u2192 " + status, null);
+      }
       onUpdate({ ...co, ...body });
     } catch (e) { console.error(e); }
     setSaving(false); setEditing(false);
@@ -431,6 +462,50 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
         {loadingC ? <div style={{ color: "#475569", fontSize: 12 }}>Loading...</div> :
           contacts.length === 0 ? <div style={{ color: "#475569", fontSize: 12 }}>No linked contacts</div> :
           contacts.map((c, i) => <ContactCard key={i} contact={c} />)}
+      </div>
+
+      {/* Activity Log */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <label style={ls}>Activity ({activities.length})</label>
+          <button onClick={() => setShowLogForm(!showLogForm)} style={{ background: "#1e3a5f", color: "#3b82f6", border: "1px solid #3b82f640", padding: "3px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>+ Log Activity</button>
+        </div>
+
+        {showLogForm && (
+          <div style={{ background: "#1a1f2e", border: "1px solid #334155", borderRadius: 8, padding: 12, marginBottom: 10 }}>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+              {[["call_made","&#9742; Called"],["call_received","&#9742; Received Call"],["email_sent","&#9993; Emailed"],["email_received","&#9993; Email Received"],["meeting","&#9679; Meeting"],["note_added","&#9998; Note"]].map(([v,l]) =>
+                <button key={v} onClick={() => setLogType(v)} dangerouslySetInnerHTML={{__html: l}} style={{ background: logType === v ? "#3b82f620" : "#111827", color: logType === v ? "#3b82f6" : "#94a3b8", border: "1px solid " + (logType === v ? "#3b82f640" : "#334155"), padding: "4px 8px", borderRadius: 4, fontSize: 11, cursor: "pointer", fontWeight: 600 }} />
+              )}
+            </div>
+            <textarea value={logNote} onChange={e => setLogNote(e.target.value)} placeholder="What happened?" rows={2} style={{ width: "100%", background: "#111827", color: "#e2e8f0", border: "1px solid #334155", padding: 8, borderRadius: 4, fontSize: 12, resize: "vertical", boxSizing: "border-box", marginBottom: 8 }} />
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={submitLog} disabled={loggingActivity} style={{ background: "#10b981", color: "#fff", border: "none", padding: "6px 16px", borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{loggingActivity ? "Saving..." : "Save"}</button>
+              <button onClick={() => { setShowLogForm(false); setLogNote(""); }} style={{ background: "#1a1f2e", color: "#94a3b8", border: "1px solid #334155", padding: "6px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {loadingA ? <div style={{ color: "#475569", fontSize: 12 }}>Loading...</div> :
+          activities.length === 0 ? <div style={{ color: "#475569", fontSize: 12 }}>No activity logged yet</div> :
+          <div style={{ maxHeight: 250, overflowY: "auto" }}>
+            {activities.map((a, i) => {
+              const icons = { call_made: "&#9742;", call_received: "&#9742;", email_sent: "&#9993;", email_received: "&#9993;", note_added: "&#9998;", meeting: "&#9679;", status_changed: "&#8635;", deal_created: "&#10003;" };
+              const colors = { call_made: "#10b981", call_received: "#10b981", email_sent: "#3b82f6", email_received: "#3b82f6", note_added: "#94a3b8", meeting: "#f59e0b", status_changed: "#8b5cf6", deal_created: "#22c55e" };
+              const timeAgo = (d) => { const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000); if (s < 60) return "just now"; if (s < 3600) return Math.floor(s/60) + "m ago"; if (s < 86400) return Math.floor(s/3600) + "h ago"; return Math.floor(s/86400) + "d ago"; };
+              return (
+                <div key={i} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: i < activities.length - 1 ? "1px solid #1a1f2e" : "none" }}>
+                  <span dangerouslySetInnerHTML={{__html: icons[a.type] || "&#9679;"}} style={{ color: colors[a.type] || "#64748b", fontSize: 14, minWidth: 18, textAlign: "center" }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, color: "#e2e8f0" }}>{a.subject || a.type.replace(/_/g, " ")}</div>
+                    {a.body && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{a.body}</div>}
+                  </div>
+                  <span style={{ fontSize: 10, color: "#475569", whiteSpace: "nowrap" }}>{timeAgo(a.created_at)}</span>
+                </div>
+              );
+            })}
+          </div>
+        }
       </div>
 
       <div style={{ marginBottom: 16 }}>
