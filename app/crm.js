@@ -419,6 +419,7 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
         {co.phone && <a href={"tel:" + co.phone} style={{ background: "#1a3a2a", color: "#10b981", border: "1px solid #10b98140", padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, textDecoration: "none" }}>&#9742; Call</a>}
         {co.website && <a href={co.website} target="_blank" rel="noreferrer" style={{ background: "#4a3520", color: "#f59e0b", border: "1px solid #f59e0b40", padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, textDecoration: "none" }}>&#9679; Web</a>}
         <button onClick={() => onCreateDeal(co)} style={{ background: "#10b98120", color: "#10b981", border: "1px solid #10b98140", padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Create Deal</button>
+        <button onClick={() => setEditing(!editing)} style={{ background: editing ? "#4a352040" : "#1e3a5f", color: editing ? "#f59e0b" : "#3b82f6", border: "1px solid " + (editing ? "#f59e0b40" : "#3b82f640"), padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{editing ? "Cancel Edit" : "Edit Lead"}</button>
       </div>
 
       {/* Follow-up */}
@@ -513,9 +514,11 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
         {editing ? <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={5} style={{ width: "100%", background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: 8, borderRadius: 6, fontSize: 13, resize: "vertical", boxSizing: "border-box" }} /> : <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6, maxHeight: 150, overflowY: "auto" }}>{notes || "\u2014"}</div>}
       </div>
 
-      <div style={{ display: "flex", gap: 8 }}>
-        {editing ? (<><button onClick={save} disabled={saving} style={{ flex: 1, background: "#10b981", color: "#fff", border: "none", padding: 10, borderRadius: 6, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{saving ? "Saving..." : "Save"}</button><button onClick={() => setEditing(false)} style={{ background: "#1a1f2e", color: "#94a3b8", border: "1px solid #334155", padding: "10px 16px", borderRadius: 6, fontSize: 13, cursor: "pointer" }}>Cancel</button></>) : (<button onClick={() => setEditing(true)} style={{ flex: 1, background: "#1e3a5f", color: "#3b82f6", border: "1px solid #3b82f640", padding: 10, borderRadius: 6, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Edit Lead</button>)}
-      </div>
+      {editing && (
+        <div style={{ display: "flex", gap: 8, position: "sticky", bottom: 0, background: "#0f1219", padding: "12px 0" }}>
+          <button onClick={save} disabled={saving} style={{ flex: 1, background: "#10b981", color: "#fff", border: "none", padding: 10, borderRadius: 6, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{saving ? "Saving..." : "Save Changes"}</button>
+        </div>
+      )}
     </div>
   );
 }
