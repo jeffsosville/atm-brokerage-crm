@@ -850,9 +850,13 @@ export default function CRM() {
       const ql = q.toLowerCase();
       let ctx = [];
       const sums = await api("atm_relationship_summaries?select=company_id,summary,sentiment,relationship_type,deal_signals,suggested_actions,key_contacts,last_topic,email_count,last_email_at&order=email_count.desc&limit=50");
-      const coAll = await api("atm_companies?select=id,company_name,email,phone,city,state,segment,category,estimated_atm_count&limit=2828");
-      const coMap = {}; coAll.forEach(c => { coMap[c.id] = c; });
-      const matchCos = coAll.filter(c => c.company_name && ql.includes(c.company_name.toLowerCase().split(/[\s.]/)[0].toLowerCase()));
+      let matchCos = [];
+      const words = ql.split(/\s+/).filter(w => w.length > 2);
+      for (const w of words) {
+        try { const found = await api("atm_companies?select=id,company_name,email,phone,city,state,segment,category,estimated_atm_count&company_name=ilike.*" + encodeURIComponent(w) + "*&limit=5"); matchCos = matchCos.concat(found); } catch(e) {}
+      }
+      matchCos = matchCos.filter((c, i, a) => a.findIndex(x => x.id === c.id) === i);
+      const coMap = {}; matchCos.forEach(c => { coMap[c.id] = c; });
       if (matchCos.length > 0 && matchCos.length < 10) {
         ctx.push("=== MATCHING COMPANIES ===");
         for (const mc of matchCos.slice(0, 5)) {
@@ -867,11 +871,19 @@ export default function CRM() {
       }
       if (ql.match(/hot|warm|signal|deal|prospect|buyer|seller|follow|pipeline|priority/)) {
         ctx.push("=== DEAL SIGNALS ===");
-        sums.filter(s => s.deal_signals && (s.sentiment === "hot" || s.sentiment === "warm")).slice(0, 25).forEach(s => { const co = coMap[s.company_id]; ctx.push((co?.company_name||"?") + " | " + (s.sentiment||"").toUpperCase() + " | " + s.email_count + " emails | Last: " + (s.last_email_at||"?").slice(0,10) + " | " + (s.deal_signals||"").slice(0,120)); });
+        const hotWarm = sums.filter(s => s.deal_signals && (s.sentiment === "hot" || s.sentiment === "warm")).slice(0, 25);
+        for (const s of hotWarm) {
+          if (!coMap[s.company_id]) { try { const c = await api("atm_companies?select=id,company_name,email,phone&id=eq." + s.company_id + "&limit=1"); if (c[0]) coMap[s.company_id] = c[0]; } catch(e) {} }
+          const co = coMap[s.company_id]; ctx.push((co?.company_name||"?") + " | " + (s.sentiment||"").toUpperCase() + " | " + s.email_count + " emails | Last: " + (s.last_email_at||"?").slice(0,10) + " | " + (s.deal_signals||"").slice(0,120));
+        }
       }
       if (ql.match(/quiet|decay|stale|dormant|inactive|re-engage|ghost/)) {
         ctx.push("=== DECAYING ===");
-        sums.filter(s => s.email_count > 5).sort((a,b) => (a.last_email_at||"").localeCompare(b.last_email_at||"")).slice(0,15).forEach(s => { const co = coMap[s.company_id]; ctx.push((co?.company_name||"?") + " | " + s.email_count + " emails | Last: " + (s.last_email_at||"?").slice(0,10) + " | " + (s.summary||"").slice(0,80)); });
+        const decaying = sums.filter(s => s.email_count > 5).sort((a,b) => (a.last_email_at||"").localeCompare(b.last_email_at||"")).slice(0,15);
+        for (const s of decaying) {
+          if (!coMap[s.company_id]) { try { const c = await api("atm_companies?select=id,company_name&id=eq." + s.company_id + "&limit=1"); if (c[0]) coMap[s.company_id] = c[0]; } catch(e) {} }
+          const co = coMap[s.company_id]; ctx.push((co?.company_name||"?") + " | " + s.email_count + " emails | Last: " + (s.last_email_at||"?").slice(0,10) + " | " + (s.summary||"").slice(0,80));
+        }
       }
       if (ql.match(/listing|route|portfolio|charlotte|buffalo|nebraska|omaha|price|valuation|compare/)) {
         try { const listings = await api("atm_listings?select=*"); ctx.push("=== LISTINGS ==="); listings.forEach(l => { ctx.push(l.listing_name + " | $" + (l.asking_price||0).toLocaleString() + " | " + l.total_atms + " ATMs | Net $" + (l.net_profit_annual||0).toLocaleString() + "/yr"); if (l.highlights) ctx.push("  " + l.highlights); if (l.risks) ctx.push("  Risks: " + l.risks); }); } catch(e) {}
