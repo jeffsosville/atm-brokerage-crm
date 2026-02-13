@@ -319,10 +319,12 @@ function Row({ co, onClick, sel }) {
       <td style={{ padding: "10px 12px", fontSize: 12, color: "#94a3b8" }}>{co.category || "\u2014"}</td>
       <td style={{ padding: "10px 12px", fontSize: 13, textAlign: "center", fontWeight: atm ? 700 : 400, color: atm ? "#10b981" : "#475569" }}>{atm ? atm.toLocaleString() : "\u2014"}</td>
       <td style={{ padding: "10px 12px" }}>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {co.email && <span title="Has email" style={{ color: "#3b82f6", fontSize: 14 }}>&#9993;</span>}
           {co.phone && <span title="Has phone" style={{ color: "#10b981", fontSize: 14 }}>&#9742;</span>}
           {co.website && <span title="Has website" style={{ color: "#f59e0b", fontSize: 14 }}>&#9679;</span>}
+          {co.contact_count > 0 && <span title={co.contact_count + " contacts"} style={{ background: "#1e3a5f", color: "#3b82f6", padding: "1px 5px", borderRadius: 3, fontSize: 10, fontWeight: 700 }}>{co.contact_count}</span>}
+          {co.email_count > 0 && <span title={co.email_count + " emails"} style={{ background: "#1a3a2a", color: "#10b981", padding: "1px 5px", borderRadius: 3, fontSize: 10, fontWeight: 700 }}>{co.email_count}&#9993;</span>}
         </div>
       </td>
     </tr>
@@ -460,6 +462,8 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
   const [loadingC, setLoadingC] = useState(false);
   const [activities, setActivities] = useState([]);
   const [loadingA, setLoadingA] = useState(false);
+  const [activityTab, setActivityTab] = useState("all");
+  const [expandedActivity, setExpandedActivity] = useState(null);
   const [showLogForm, setShowLogForm] = useState(false);
   const [logType, setLogType] = useState("call_made");
   const [logNote, setLogNote] = useState("");
@@ -477,7 +481,7 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
 
   const loadActivities = () => {
     setLoadingA(true);
-    api("atm_activity_log?company_id=eq." + co.id + "&order=created_at.desc&limit=30")
+    api("atm_activity_log?company_id=eq." + co.id + "&order=created_at.desc&limit=100")
       .then(d => setActivities(d)).catch(e => console.error(e)).finally(() => setLoadingA(false));
   };
 
@@ -485,7 +489,7 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
     setStatus(co.status || "new"); setSegment(co.segment || "unknown");
     setPriority(co.priority || ""); setNotes(co.notes || "");
     setFollowup(co.next_followup_at ? co.next_followup_at.split("T")[0] : ""); setEditing(false);
-    setShowLogForm(false); setLogNote("");
+    setShowLogForm(false); setLogNote(""); setActivityTab("all"); setExpandedActivity(null);
     setCompName(co.company_name || ""); setDba(co.dba_name || "");
     setCity(co.city || ""); setState(co.state || ""); setZip(co.zip || "");
     setPhone(co.phone || ""); setEmail(co.email || "");
@@ -620,6 +624,14 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
           <button onClick={() => setShowLogForm(!showLogForm)} style={{ background: "#1e3a5f", color: "#3b82f6", border: "1px solid #3b82f640", padding: "3px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>+ Log Activity</button>
         </div>
 
+        {/* Activity filter tabs */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+          {[["all","All"],["email","Emails"],["call","Calls"],["note","Notes"]].map(([k,l]) => {
+            const count = k === "all" ? activities.length : activities.filter(a => k === "email" ? (a.type||"").includes("email") : k === "call" ? (a.type||"").includes("call") : k === "note" ? ["note_added","note"].includes(a.type) : false).length;
+            return <button key={k} onClick={() => setActivityTab(k)} style={{ background: activityTab === k ? "#1e3a5f" : "#111827", color: activityTab === k ? "#3b82f6" : "#64748b", border: "1px solid " + (activityTab === k ? "#3b82f640" : "#1e293b"), padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>{l} {count > 0 && count !== activities.length ? "(" + count + ")" : ""}</button>;
+          })}
+        </div>
+
         {showLogForm && (
           <div style={{ background: "#1a1f2e", border: "1px solid #334155", borderRadius: 8, padding: 12, marginBottom: 10 }}>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
@@ -637,19 +649,37 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
 
         {loadingA ? <div style={{ color: "#475569", fontSize: 12 }}>Loading...</div> :
           activities.length === 0 ? <div style={{ color: "#475569", fontSize: 12 }}>No activity logged yet</div> :
-          <div style={{ maxHeight: 250, overflowY: "auto" }}>
-            {activities.map((a, i) => {
+          <div style={{ maxHeight: 400, overflowY: "auto" }}>
+            {activities.filter(a => {
+              if (activityTab === "all") return true;
+              if (activityTab === "email") return (a.type||"").includes("email");
+              if (activityTab === "call") return (a.type||"").includes("call");
+              if (activityTab === "note") return ["note_added","note"].includes(a.type);
+              return true;
+            }).map((a, i) => {
               const icons = { call_made: "&#9742;", call_received: "&#9742;", email_sent: "&#9993;", email_received: "&#9993;", note_added: "&#9998;", meeting: "&#9679;", status_changed: "&#8635;", deal_created: "&#10003;" };
-              const colors = { call_made: "#10b981", call_received: "#10b981", email_sent: "#3b82f6", email_received: "#3b82f6", note_added: "#94a3b8", meeting: "#f59e0b", status_changed: "#8b5cf6", deal_created: "#22c55e" };
-              const timeAgo = (d) => { const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000); if (s < 60) return "just now"; if (s < 3600) return Math.floor(s/60) + "m ago"; if (s < 86400) return Math.floor(s/3600) + "h ago"; return Math.floor(s/86400) + "d ago"; };
+              const colors = { call_made: "#10b981", call_received: "#10b981", email_sent: "#3b82f6", email_received: "#60a5fa", note_added: "#94a3b8", meeting: "#f59e0b", status_changed: "#8b5cf6", deal_created: "#22c55e" };
+              const isEmail = (a.type||"").includes("email");
+              const isGmail = a.channel === "gmail" || a.source === "gmail";
+              const isExpanded = expandedActivity === a.id;
+              const timeAgo = (d) => { const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000); if (s < 60) return "just now"; if (s < 3600) return Math.floor(s/60) + "m ago"; if (s < 86400) return Math.floor(s/3600) + "h ago"; const days = Math.floor(s/86400); if (days < 30) return days + "d ago"; if (days < 365) return Math.floor(days/30) + "mo ago"; return Math.floor(days/365) + "y ago"; };
+              const meta = a.metadata ? (typeof a.metadata === "string" ? JSON.parse(a.metadata) : a.metadata) : {};
               return (
-                <div key={i} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: i < activities.length - 1 ? "1px solid #1a1f2e" : "none" }}>
-                  <span dangerouslySetInnerHTML={{__html: icons[a.type] || "&#9679;"}} style={{ color: colors[a.type] || "#64748b", fontSize: 14, minWidth: 18, textAlign: "center" }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, color: "#e2e8f0" }}>{a.subject || a.type.replace(/_/g, " ")}</div>
-                    {a.body && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{a.body}</div>}
+                <div key={a.id || i} onClick={() => isEmail && a.body ? setExpandedActivity(isExpanded ? null : a.id) : null} style={{ display: "flex", gap: 10, padding: "8px 4px", borderBottom: "1px solid #1a1f2e", cursor: isEmail && a.body ? "pointer" : "default", background: isExpanded ? "#111827" : "transparent", borderRadius: isExpanded ? 6 : 0, marginBottom: isExpanded ? 4 : 0 }}>
+                  <span dangerouslySetInnerHTML={{__html: icons[a.type] || "&#9679;"}} style={{ color: colors[a.type] || "#64748b", fontSize: 14, minWidth: 18, textAlign: "center", marginTop: 2 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ fontSize: 12, color: "#e2e8f0", fontWeight: isEmail ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isExpanded ? "normal" : "nowrap" }}>{a.subject || a.type.replace(/_/g, " ")}</div>
+                      {isGmail && <span style={{ background: "#1a1f2e", color: "#64748b", padding: "0px 4px", borderRadius: 2, fontSize: 9, fontWeight: 600, flexShrink: 0 }}>GMAIL</span>}
+                    </div>
+                    {isEmail && meta.from && <div style={{ fontSize: 10, color: "#475569", marginTop: 1 }}>{a.direction === "outbound" ? "To: " : "From: "}{a.direction === "outbound" ? (meta.to || "").split(";")[0] : meta.from}</div>}
+                    {isExpanded && a.body && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 6, lineHeight: 1.5, padding: "8px 0", borderTop: "1px solid #1e293b" }}>{a.body}</div>}
+                    {!isEmail && a.body && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.body}</div>}
                   </div>
-                  <span style={{ fontSize: 10, color: "#475569", whiteSpace: "nowrap" }}>{timeAgo(a.created_at)}</span>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, color: "#475569", whiteSpace: "nowrap" }}>{timeAgo(a.created_at)}</span>
+                    {isEmail && a.body && <span style={{ fontSize: 9, color: "#334155", marginTop: 2 }}>{isExpanded ? "&#9650;" : "&#9660;"}</span>}
+                  </div>
                 </div>
               );
             })}
@@ -705,7 +735,7 @@ export default function CRM() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      let q = "atm_companies?select=*&order=" + (sortBy === "atm_count" ? "estimated_atm_count.desc.nullslast" : sortBy === "name" ? "company_name.asc" : sortBy === "city" ? "city.asc.nullslast" : sortBy === "followup" ? "next_followup_at.asc.nullslast" : "updated_at.desc") + "&offset=" + (page * PS) + "&limit=" + PS;
+      let q = "atm_companies_enriched?select=*&order=" + (sortBy === "atm_count" ? "estimated_atm_count.desc.nullslast" : sortBy === "name" ? "company_name.asc" : sortBy === "city" ? "city.asc.nullslast" : sortBy === "followup" ? "next_followup_at.asc.nullslast" : "updated_at.desc") + "&offset=" + (page * PS) + "&limit=" + PS;
       q += "&category=not.in.(dead_url,bank,not_atm,dead_url_maybe_atm)";
       if (catFilter !== "all") q += "&category=eq." + catFilter;
       if (segFilter !== "all") q += "&segment=eq." + segFilter;
