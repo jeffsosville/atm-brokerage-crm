@@ -849,49 +849,68 @@ export default function CRM() {
     try {
       const ql = q.toLowerCase();
       let ctx = [];
-      const sums = await api("atm_relationship_summaries?select=company_id,summary,sentiment,relationship_type,deal_signals,suggested_actions,key_contacts,last_topic,email_count,last_email_at&order=email_count.desc&limit=50");
+      const coMap = {};
+      const safeFetch = async (path) => { try { return await api(path); } catch(e) { return []; } };
+
+      // Get relationship summaries (always useful)
+      const sums = await safeFetch("atm_relationship_summaries?select=company_id,summary,sentiment,relationship_type,deal_signals,suggested_actions,key_contacts,last_topic,email_count,last_email_at&order=email_count.desc&limit=50");
+
+      // Search for mentioned companies (only words 4+ chars to avoid overmatch)
       let matchCos = [];
-      const words = ql.split(/\s+/).filter(w => w.length > 2);
-      for (const w of words) {
-        try { const found = await api("atm_companies?select=id,company_name,email,phone,city,state,segment,category,estimated_atm_count&company_name=ilike.*" + encodeURIComponent(w) + "*&limit=5"); matchCos = matchCos.concat(found); } catch(e) {}
+      const words = ql.split(/\s+/).filter(w => w.length >= 4 && !["what","about","tell","from","with","have","been","this","that","your","their","they","does","where","when","should","could","would"].includes(w));
+      for (const w of words.slice(0, 3)) {
+        const found = await safeFetch("atm_companies?select=id,company_name,email,phone,city,state,segment,category,estimated_atm_count&company_name=ilike.*" + encodeURIComponent(w) + "*&limit=5");
+        matchCos = matchCos.concat(found);
       }
-      matchCos = matchCos.filter((c, i, a) => a.findIndex(x => x.id === c.id) === i);
-      const coMap = {}; matchCos.forEach(c => { coMap[c.id] = c; });
-      if (matchCos.length > 0 && matchCos.length < 10) {
+      // Also try the full query as a company name search
+      if (words.length > 0) {
+        const fullFound = await safeFetch("atm_companies?select=id,company_name,email,phone,city,state,segment,category,estimated_atm_count&company_name=ilike.*" + encodeURIComponent(words.join(" ")) + "*&limit=3");
+        matchCos = matchCos.concat(fullFound);
+      }
+      matchCos = matchCos.filter((c, i, a) => a.findIndex(x => x.id === c.id) === i).slice(0, 8);
+      matchCos.forEach(c => { coMap[c.id] = c; });
+
+      if (matchCos.length > 0) {
         ctx.push("=== MATCHING COMPANIES ===");
         for (const mc of matchCos.slice(0, 5)) {
           ctx.push("Company: " + mc.company_name + " | " + (mc.email||"") + " | " + (mc.phone||"") + " | " + (mc.city||"") + ", " + (mc.state||"") + " | Seg: " + mc.segment + " | ATMs: " + (mc.estimated_atm_count||"?"));
           const sum = sums.find(s => s.company_id === mc.id);
-          if (sum) { ctx.push("  AI: " + sum.summary); ctx.push("  Sentiment: " + sum.sentiment + " | Type: " + sum.relationship_type + " | Emails: " + sum.email_count + " | Last: " + (sum.last_email_at||"?")); if (sum.deal_signals) ctx.push("  Signals: " + sum.deal_signals); if (sum.key_contacts) ctx.push("  Contacts: " + sum.key_contacts); if (sum.suggested_actions) ctx.push("  Actions: " + sum.suggested_actions); }
-          const emails = await api("atm_activity_log?company_id=eq." + mc.id + "&type=eq.email&select=subject,body_preview,from_address,date&order=date.desc&limit=10");
+          if (sum) { ctx.push("  AI: " + sum.summary); ctx.push("  Sentiment: " + sum.sentiment + " | Emails: " + sum.email_count + " | Last: " + (sum.last_email_at||"?")); if (sum.deal_signals) ctx.push("  Signals: " + sum.deal_signals); if (sum.key_contacts) ctx.push("  Contacts: " + sum.key_contacts); if (sum.suggested_actions) ctx.push("  Actions: " + sum.suggested_actions); }
+          const emails = await safeFetch("atm_activity_log?company_id=eq." + mc.id + "&type=eq.email&select=subject,body_preview,from_address,date&order=date.desc&limit=8");
           if (emails.length > 0) { ctx.push("  Recent emails:"); emails.forEach(e => ctx.push("    " + (e.date||"").slice(0,10) + " | " + (e.from_address||"") + " | " + (e.subject||"") + " | " + (e.body_preview||"").slice(0,80))); }
-          const contacts = await api("atm_contacts?company_id=eq." + mc.id + "&select=first_name,last_name,email,phone,title&limit=10");
+          const contacts = await safeFetch("atm_contacts?company_id=eq." + mc.id + "&select=first_name,last_name,email,phone,title&limit=10");
           if (contacts.length > 0) { ctx.push("  Contacts:"); contacts.forEach(c => ctx.push("    " + (c.first_name||"") + " " + (c.last_name||"") + " | " + (c.title||"") + " | " + (c.email||"") + " | " + (c.phone||""))); }
         }
       }
-      if (ql.match(/hot|warm|signal|deal|prospect|buyer|seller|follow|pipeline|priority/)) {
+
+      if (ql.match(/hot|warm|signal|deal|prospect|buyer|seller|follow|pipeline|priority|call/)) {
         ctx.push("=== DEAL SIGNALS ===");
-        const hotWarm = sums.filter(s => s.deal_signals && (s.sentiment === "hot" || s.sentiment === "warm")).slice(0, 25);
+        const hotWarm = sums.filter(s => s.deal_signals && (s.sentiment === "hot" || s.sentiment === "warm")).slice(0, 20);
         for (const s of hotWarm) {
-          if (!coMap[s.company_id]) { try { const c = await api("atm_companies?select=id,company_name,email,phone&id=eq." + s.company_id + "&limit=1"); if (c[0]) coMap[s.company_id] = c[0]; } catch(e) {} }
+          if (!coMap[s.company_id]) { const c = await safeFetch("atm_companies?select=id,company_name,email,phone&id=eq." + s.company_id + "&limit=1"); if (c[0]) coMap[s.company_id] = c[0]; }
           const co = coMap[s.company_id]; ctx.push((co?.company_name||"?") + " | " + (s.sentiment||"").toUpperCase() + " | " + s.email_count + " emails | Last: " + (s.last_email_at||"?").slice(0,10) + " | " + (s.deal_signals||"").slice(0,120));
         }
       }
-      if (ql.match(/quiet|decay|stale|dormant|inactive|re-engage|ghost/)) {
+
+      if (ql.match(/quiet|decay|stale|dormant|inactive|re.engage|ghost/)) {
         ctx.push("=== DECAYING ===");
         const decaying = sums.filter(s => s.email_count > 5).sort((a,b) => (a.last_email_at||"").localeCompare(b.last_email_at||"")).slice(0,15);
         for (const s of decaying) {
-          if (!coMap[s.company_id]) { try { const c = await api("atm_companies?select=id,company_name&id=eq." + s.company_id + "&limit=1"); if (c[0]) coMap[s.company_id] = c[0]; } catch(e) {} }
+          if (!coMap[s.company_id]) { const c = await safeFetch("atm_companies?select=id,company_name&id=eq." + s.company_id + "&limit=1"); if (c[0]) coMap[s.company_id] = c[0]; }
           const co = coMap[s.company_id]; ctx.push((co?.company_name||"?") + " | " + s.email_count + " emails | Last: " + (s.last_email_at||"?").slice(0,10) + " | " + (s.summary||"").slice(0,80));
         }
       }
+
       if (ql.match(/listing|route|portfolio|charlotte|buffalo|nebraska|omaha|price|valuation|compare/)) {
-        try { const listings = await api("atm_listings?select=*"); ctx.push("=== LISTINGS ==="); listings.forEach(l => { ctx.push(l.listing_name + " | $" + (l.asking_price||0).toLocaleString() + " | " + l.total_atms + " ATMs | Net $" + (l.net_profit_annual||0).toLocaleString() + "/yr"); if (l.highlights) ctx.push("  " + l.highlights); if (l.risks) ctx.push("  Risks: " + l.risks); }); } catch(e) {}
+        const listings = await safeFetch("atm_listings?select=*");
+        if (listings.length > 0) { ctx.push("=== LISTINGS ==="); listings.forEach(l => { ctx.push(l.listing_name + " | $" + (l.asking_price||0).toLocaleString() + " | " + l.total_atms + " ATMs | Net $" + (l.net_profit_annual||0).toLocaleString() + "/yr"); if (l.highlights) ctx.push("  " + l.highlights); if (l.risks) ctx.push("  Risks: " + l.risks); }); }
       }
-      ctx.push("=== STATS === Total: " + total + " | Summaries: " + sums.length + " | Hot: " + sums.filter(s=>s.sentiment==="hot").length + " | Warm: " + sums.filter(s=>s.sentiment==="warm").length);
+
+      ctx.push("=== STATS === CRM Total: " + total + " | Summaries: " + sums.length + " | Hot: " + sums.filter(s=>s.sentiment==="hot").length + " | Warm: " + sums.filter(s=>s.sentiment==="warm").length);
+
       const history = chatMessages.slice(-6).map(m => ({ role: m.role, content: m.content }));
       history.push({ role: "user", content: "[CRM Data]\n" + ctx.join("\n") + "\n\n[Question]\n" + q });
-      const resp = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: "You are the ATM Brokerage CRM AI assistant helping John (the broker). You have access to email history, relationship summaries, contacts, deals, and listings. Be direct and specific - use company names, contact names, email counts, dates. Format concisely. When asked about follow-ups, prioritize by recency and deal value.", messages: history }) });
+      const resp = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: "You are the ATM Brokerage CRM AI assistant helping John (the broker). You have access to email history, relationship summaries, contacts, deals, and listings. Be direct and specific - use company names, contact names, email counts, dates. Format concisely.", messages: history }) });
       if (!resp.ok) throw new Error("API " + resp.status);
       const data = await resp.json();
       setChatMessages(p => [...p, { role: "assistant", content: data.content?.map(c => c.text || "").join("\n") || "No response." }]);
