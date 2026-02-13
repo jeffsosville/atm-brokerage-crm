@@ -460,6 +460,8 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
   const [saving, setSaving] = useState(false);
   const [contacts, setContacts] = useState([]);
   const [loadingC, setLoadingC] = useState(false);
+  const [aiSummary, setAiSummary] = useState(null);
+  const [loadingAI, setLoadingAI] = useState(false);
   const [activities, setActivities] = useState([]);
   const [loadingA, setLoadingA] = useState(false);
   const [activityTab, setActivityTab] = useState("all");
@@ -498,6 +500,9 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
     setLoadingC(true);
     api("atm_contacts?company_id=eq." + co.id + "&order=segment.asc,email.asc&limit=50")
       .then(d => setContacts(d)).catch(e => console.error(e)).finally(() => setLoadingC(false));
+    setLoadingAI(true);
+    api("atm_relationship_summaries?company_id=eq." + co.id + "&limit=1")
+      .then(d => setAiSummary(d && d[0] ? d[0] : null)).catch(e => console.error(e)).finally(() => setLoadingAI(false));
     loadActivities();
   }, [co.id]);
 
@@ -553,6 +558,43 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
         <button onClick={() => onCreateDeal(co)} style={{ background: "#10b98120", color: "#10b981", border: "1px solid #10b98140", padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Create Deal</button>
         <button onClick={() => setEditing(!editing)} style={{ background: editing ? "#4a352040" : "#1e3a5f", color: editing ? "#f59e0b" : "#3b82f6", border: "1px solid " + (editing ? "#f59e0b40" : "#3b82f640"), padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{editing ? "Cancel Edit" : "Edit Lead"}</button>
       </div>
+
+      {/* AI Intelligence Card */}
+      {(aiSummary || loadingAI) && (
+        <div style={{ background: "linear-gradient(135deg, #0c1425 0%, #111827 100%)", border: "1px solid #1e3a5f", borderRadius: 8, padding: 14, marginBottom: 16, position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg, #3b82f6, #8b5cf6, #3b82f6)", opacity: 0.6 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 14 }}>{"\u{1F9E0}"}</span>
+            <label style={{ fontSize: 10, fontWeight: 700, color: "#3b82f6", textTransform: "uppercase", letterSpacing: "1px" }}>AI Intelligence</label>
+            {aiSummary && aiSummary.sentiment && (() => {
+              const sm = { hot: { c: "#ef4444", l: "HOT" }, warm: { c: "#f59e0b", l: "WARM" }, cold: { c: "#3b82f6", l: "COLD" }, dead: { c: "#6b7280", l: "DEAD" } };
+              const s = sm[aiSummary.sentiment] || sm.cold;
+              return <span style={{ background: s.c + "20", color: s.c, border: "1px solid " + s.c + "40", padding: "1px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700 }}>{s.l}</span>;
+            })()}
+            {aiSummary && aiSummary.relationship_type && <span style={{ background: "#1a1f2e", color: "#94a3b8", padding: "1px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600, textTransform: "uppercase" }}>{aiSummary.relationship_type}</span>}
+          </div>
+          {loadingAI ? <div style={{ color: "#475569", fontSize: 12 }}>Analyzing...</div> : aiSummary ? (<>
+            <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.6, marginBottom: 8 }}>{aiSummary.summary}</div>
+            {aiSummary.last_topic && <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}><span style={{ color: "#475569", fontWeight: 600 }}>Last topic:</span> {aiSummary.last_topic}</div>}
+            {aiSummary.key_contacts && <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}><span style={{ color: "#475569", fontWeight: 600 }}>Key contacts:</span> {aiSummary.key_contacts}</div>}
+            {aiSummary.deal_signals && <div style={{ fontSize: 12, color: "#f59e0b", background: "#4a352020", border: "1px solid #f59e0b30", borderRadius: 4, padding: "6px 10px", marginBottom: 6 }}>{"\u26A1"} {aiSummary.deal_signals}</div>}
+            {aiSummary.suggested_actions && (() => {
+              let actions = aiSummary.suggested_actions;
+              if (typeof actions === "string") try { actions = JSON.parse(actions); } catch { actions = []; }
+              if (!Array.isArray(actions) || actions.length === 0) return null;
+              return <div style={{ marginTop: 6 }}>
+                {actions.slice(0, 3).map((a, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <span style={{ color: a.priority === "urgent" ? "#ef4444" : a.priority === "high" ? "#f59e0b" : "#3b82f6", fontSize: 11 }}>{"\u2192"}</span>
+                    <span style={{ fontSize: 11, color: "#94a3b8" }}>{a.reason || a.action}</span>
+                  </div>
+                ))}
+              </div>;
+            })()}
+            {aiSummary.email_count > 0 && <div style={{ fontSize: 10, color: "#334155", marginTop: 6 }}>{aiSummary.email_count} emails analyzed {aiSummary.analyzed_at ? "\u00B7 " + new Date(aiSummary.analyzed_at).toLocaleDateString() : ""}</div>}
+          </>) : null}
+        </div>
+      )}
 
       {/* Follow-up */}
       <div style={{ background: followup && followUpStatus(followup) === "overdue" ? "#4a202040" : "#111827", border: "1px solid #1e293b", borderRadius: 8, padding: 12, marginBottom: 16 }}>
@@ -720,10 +762,13 @@ export default function CRM() {
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState({});
   const [followStats, setFollowStats] = useState({ overdue: 0, due: 0, upcoming: 0 });
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
   const PS = 50;
 
   useEffect(() => {
     api("crm_stats?select=*").then(d => { if (d && d[0]) { const s = d[0]; setStats({ total: s.total_active, withEmail: s.with_email, withPhone: s.with_phone, withAtmCount: s.with_atm_count, confirmed: s.confirmed_atm, operators: s.operators }); } }).catch(e => console.error(e));
+    api("atm_notifications?dismissed_at=is.null&order=priority.asc,created_at.desc&limit=50").then(d => setNotifications(d || [])).catch(e => console.error(e));
     const t = today();
     Promise.all([
       api("atm_companies?select=id&next_followup_at=lt." + t + "&next_followup_at=not.is.null&category=not.in.(dead_url,bank,not_atm,dead_url_maybe_atm)"),
@@ -735,7 +780,7 @@ export default function CRM() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      let q = "atm_companies_enriched?select=*&order=" + (sortBy === "atm_count" ? "estimated_atm_count.desc.nullslast" : sortBy === "name" ? "company_name.asc" : sortBy === "city" ? "city.asc.nullslast" : sortBy === "followup" ? "next_followup_at.asc.nullslast" : "updated_at.desc") + "&offset=" + (page * PS) + "&limit=" + PS;
+      let q = "atm_companies_enriched?select=*&order=" + (sortBy === "atm_count" ? "estimated_atm_count.desc.nullslast" : sortBy === "name" ? "company_name.asc" : sortBy === "city" ? "city.asc.nullslast" : sortBy === "followup" ? "next_followup_at.asc.nullslast" : sortBy === "emails" ? "email_count.desc.nullslast" : "updated_at.desc") + "&offset=" + (page * PS) + "&limit=" + PS;
       q += "&category=not.in.(dead_url,bank,not_atm,dead_url_maybe_atm)";
       if (catFilter !== "all") q += "&category=eq." + catFilter;
       if (segFilter !== "all") q += "&segment=eq." + segFilter;
@@ -813,6 +858,36 @@ export default function CRM() {
             </div>
           </div>
           {view === "crm" && <input type="text" placeholder="Search companies, cities, states..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: 320, background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: "10px 14px", borderRadius: 6, fontSize: 13, outline: "none" }} />}
+          {notifications.length > 0 && (
+            <div style={{ position: "relative" }}>
+              <button onClick={() => setShowNotifications(!showNotifications)} style={{ background: showNotifications ? "#4a2020" : "#1a1f2e", color: showNotifications ? "#ef4444" : "#e2e8f0", border: "1px solid " + (showNotifications ? "#ef444440" : "#334155"), padding: "8px 14px", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer", position: "relative" }}>
+                {"\u{1F514}"} {notifications.length}
+              </button>
+              {showNotifications && (
+                <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 8, width: 400, maxHeight: 500, overflowY: "auto", background: "#0f1219", border: "1px solid #1e293b", borderRadius: 8, boxShadow: "0 8px 32px rgba(0,0,0,0.6)", zIndex: 200, padding: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 8px 12px", borderBottom: "1px solid #1e293b" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0" }}>{"\u{1F9E0}"} Smart Notifications</span>
+                    <span style={{ fontSize: 10, color: "#475569" }}>{notifications.length} active</span>
+                  </div>
+                  {notifications.map(n => {
+                    const pc = { urgent: "#ef4444", high: "#f59e0b", normal: "#3b82f6", low: "#64748b" };
+                    const tc = { follow_up_needed: "\u{1F4E9}", deal_stale: "\u{1F4C9}", relationship_decay: "\u{1F4A4}", hot_signal: "\u{1F525}" };
+                    return (
+                      <div key={n.id} style={{ padding: "10px 8px", borderBottom: "1px solid #1a1f2e", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                        <span style={{ fontSize: 14, flexShrink: 0, marginTop: 2 }}>{tc[n.type] || "\u{26A0}"}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: pc[n.priority] || "#e2e8f0", marginBottom: 2 }}>{n.title}</div>
+                          <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>{n.message}</div>
+                          {n.suggested_action && <div style={{ fontSize: 11, color: "#3b82f6", marginTop: 4 }}>{"\u2192"} {n.suggested_action}</div>}
+                        </div>
+                        <button onClick={async (e) => { e.stopPropagation(); try { await apiPatch("atm_notifications?id=eq." + n.id, { dismissed_at: new Date().toISOString() }); setNotifications(p => p.filter(x => x.id !== n.id)); } catch(err) { console.error(err); } }} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 14, padding: "2px 4px", flexShrink: 0 }}>{"\u2715"}</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {view === "crm" && (<>
@@ -836,7 +911,7 @@ export default function CRM() {
             <select value={segFilter} onChange={e => setSegFilter(e.target.value)} style={ss}><option value="all">All Segments</option>{SEGS.filter(s => s !== "all").map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}</select>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={ss}><option value="all">All Statuses</option>{STATUSES.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}</select>
             <select value={followFilter} onChange={e => setFollowFilter(e.target.value)} style={ss}><option value="all">All Follow-ups</option><option value="due_or_overdue">Due / Overdue</option><option value="overdue">Overdue Only</option><option value="due">Due Today</option><option value="has_followup">Has Follow-up</option></select>
-            <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={ss}><option value="atm_count">Sort: ATM Count &#8595;</option><option value="followup">Sort: Follow-up</option><option value="name">Sort: Name A-Z</option><option value="city">Sort: City A-Z</option><option value="recent">Sort: Recent</option></select>
+            <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={ss}><option value="atm_count">Sort: ATM Count &#8595;</option><option value="followup">Sort: Follow-up</option><option value="name">Sort: Name A-Z</option><option value="city">Sort: City A-Z</option><option value="recent">Sort: Recent</option><option value="emails">Sort: Most Emails</option></select>
             <label style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><input type="checkbox" checked={hasEmail} onChange={e => setHasEmail(e.target.checked)} /> Email</label>
             <label style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><input type="checkbox" checked={hasPhone} onChange={e => setHasPhone(e.target.checked)} /> Phone</label>
             <button onClick={load} style={{ ...ss, cursor: "pointer", background: "#1e3a5f", color: "#3b82f6", border: "1px solid #3b82f640" }}>&#8635; Refresh</button>
