@@ -678,7 +678,7 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }}>
                     <span style={{ fontSize: 10, color: "#475569", whiteSpace: "nowrap" }}>{timeAgo(a.created_at)}</span>
-                    {isEmail && a.body && <span style={{ fontSize: 9, color: "#334155", marginTop: 2 }}>{isExpanded ? "&#9650;" : "&#9660;"}</span>}
+                    {isEmail && a.body && <span style={{ fontSize: 9, color: "#334155", marginTop: 2 }}>{isExpanded ? "\u25B2" : "\u25BC"}</span>}
                   </div>
                 </div>
               );
