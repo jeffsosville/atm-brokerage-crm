@@ -764,6 +764,10 @@ export default function CRM() {
   const [followStats, setFollowStats] = useState({ overdue: 0, due: 0, upcoming: 0 });
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState([{ role: "assistant", content: "I'm your ATM Brokerage AI assistant. I can search emails, contacts, deals, and relationship data. Ask me anything about your CRM." }]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
   const PS = 50;
 
   useEffect(() => {
@@ -836,6 +840,53 @@ export default function CRM() {
     } catch (e) { console.error(e); alert("Error creating deal: " + e.message); }
   };
 
+  const sendChat = async () => {
+    if (!chatInput.trim() || chatLoading) return;
+    const q = chatInput.trim();
+    setChatInput("");
+    setChatMessages(p => [...p, { role: "user", content: q }]);
+    setChatLoading(true);
+    try {
+      const ql = q.toLowerCase();
+      let ctx = [];
+      const sums = await api("atm_relationship_summaries?select=company_id,summary,sentiment,relationship_type,deal_signals,suggested_actions,key_contacts,last_topic,email_count,last_email_at&order=email_count.desc&limit=50");
+      const coAll = await api("atm_companies?select=id,company_name,email,phone,city,state,segment,category,estimated_atm_count&limit=2828");
+      const coMap = {}; coAll.forEach(c => { coMap[c.id] = c; });
+      const matchCos = coAll.filter(c => c.company_name && ql.includes(c.company_name.toLowerCase().split(/[\s.]/)[0].toLowerCase()));
+      if (matchCos.length > 0 && matchCos.length < 10) {
+        ctx.push("=== MATCHING COMPANIES ===");
+        for (const mc of matchCos.slice(0, 5)) {
+          ctx.push("Company: " + mc.company_name + " | " + (mc.email||"") + " | " + (mc.phone||"") + " | " + (mc.city||"") + ", " + (mc.state||"") + " | Seg: " + mc.segment + " | ATMs: " + (mc.estimated_atm_count||"?"));
+          const sum = sums.find(s => s.company_id === mc.id);
+          if (sum) { ctx.push("  AI: " + sum.summary); ctx.push("  Sentiment: " + sum.sentiment + " | Type: " + sum.relationship_type + " | Emails: " + sum.email_count + " | Last: " + (sum.last_email_at||"?")); if (sum.deal_signals) ctx.push("  Signals: " + sum.deal_signals); if (sum.key_contacts) ctx.push("  Contacts: " + sum.key_contacts); if (sum.suggested_actions) ctx.push("  Actions: " + sum.suggested_actions); }
+          const emails = await api("atm_activity_log?company_id=eq." + mc.id + "&type=eq.email&select=subject,body_preview,from_address,date&order=date.desc&limit=10");
+          if (emails.length > 0) { ctx.push("  Recent emails:"); emails.forEach(e => ctx.push("    " + (e.date||"").slice(0,10) + " | " + (e.from_address||"") + " | " + (e.subject||"") + " | " + (e.body_preview||"").slice(0,80))); }
+          const contacts = await api("atm_contacts?company_id=eq." + mc.id + "&select=first_name,last_name,email,phone,title&limit=10");
+          if (contacts.length > 0) { ctx.push("  Contacts:"); contacts.forEach(c => ctx.push("    " + (c.first_name||"") + " " + (c.last_name||"") + " | " + (c.title||"") + " | " + (c.email||"") + " | " + (c.phone||""))); }
+        }
+      }
+      if (ql.match(/hot|warm|signal|deal|prospect|buyer|seller|follow|pipeline|priority/)) {
+        ctx.push("=== DEAL SIGNALS ===");
+        sums.filter(s => s.deal_signals && (s.sentiment === "hot" || s.sentiment === "warm")).slice(0, 25).forEach(s => { const co = coMap[s.company_id]; ctx.push((co?.company_name||"?") + " | " + (s.sentiment||"").toUpperCase() + " | " + s.email_count + " emails | Last: " + (s.last_email_at||"?").slice(0,10) + " | " + (s.deal_signals||"").slice(0,120)); });
+      }
+      if (ql.match(/quiet|decay|stale|dormant|inactive|re-engage|ghost/)) {
+        ctx.push("=== DECAYING ===");
+        sums.filter(s => s.email_count > 5).sort((a,b) => (a.last_email_at||"").localeCompare(b.last_email_at||"")).slice(0,15).forEach(s => { const co = coMap[s.company_id]; ctx.push((co?.company_name||"?") + " | " + s.email_count + " emails | Last: " + (s.last_email_at||"?").slice(0,10) + " | " + (s.summary||"").slice(0,80)); });
+      }
+      if (ql.match(/listing|route|portfolio|charlotte|buffalo|nebraska|omaha|price|valuation|compare/)) {
+        try { const listings = await api("atm_listings?select=*"); ctx.push("=== LISTINGS ==="); listings.forEach(l => { ctx.push(l.listing_name + " | $" + (l.asking_price||0).toLocaleString() + " | " + l.total_atms + " ATMs | Net $" + (l.net_profit_annual||0).toLocaleString() + "/yr"); if (l.highlights) ctx.push("  " + l.highlights); if (l.risks) ctx.push("  Risks: " + l.risks); }); } catch(e) {}
+      }
+      ctx.push("=== STATS === Total: " + total + " | Summaries: " + sums.length + " | Hot: " + sums.filter(s=>s.sentiment==="hot").length + " | Warm: " + sums.filter(s=>s.sentiment==="warm").length);
+      const history = chatMessages.slice(-6).map(m => ({ role: m.role, content: m.content }));
+      history.push({ role: "user", content: "[CRM Data]\n" + ctx.join("\n") + "\n\n[Question]\n" + q });
+      const resp = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: "You are the ATM Brokerage CRM AI assistant helping John (the broker). You have access to email history, relationship summaries, contacts, deals, and listings. Be direct and specific - use company names, contact names, email counts, dates. Format concisely. When asked about follow-ups, prioritize by recency and deal value.", messages: history }) });
+      if (!resp.ok) throw new Error("API " + resp.status);
+      const data = await resp.json();
+      setChatMessages(p => [...p, { role: "assistant", content: data.content?.map(c => c.text || "").join("\n") || "No response." }]);
+    } catch (err) { setChatMessages(p => [...p, { role: "assistant", content: "Error: " + err.message }]); }
+    setChatLoading(false);
+  };
+
   const box = (label, value, color, onClick) => (
     <div onClick={onClick} style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 8, padding: "12px 16px", flex: 1, minWidth: 100, cursor: onClick ? "pointer" : "default" }}>
       <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>{label}</div>
@@ -858,6 +909,7 @@ export default function CRM() {
             </div>
           </div>
           {view === "crm" && <input type="text" placeholder="Search companies, cities, states..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: 320, background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: "10px 14px", borderRadius: 6, fontSize: 13, outline: "none" }} />}
+          <button onClick={() => setShowChat(!showChat)} style={{ background: showChat ? "#1e3a5f" : "#1a1f2e", color: showChat ? "#60a5fa" : "#e2e8f0", border: "1px solid " + (showChat ? "#3b82f640" : "#334155"), padding: "8px 14px", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{"\u{1F9E0}"} Ask AI</button>
           {notifications.length > 0 && (
             <div style={{ position: "relative" }}>
               <button onClick={() => setShowNotifications(!showNotifications)} style={{ background: showNotifications ? "#4a2020" : "#1a1f2e", color: showNotifications ? "#ef4444" : "#e2e8f0", border: "1px solid " + (showNotifications ? "#ef444440" : "#334155"), padding: "8px 14px", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer", position: "relative" }}>
@@ -940,6 +992,43 @@ export default function CRM() {
 
       {/* Detail panels */}
       {selected && view === "crm" && <CompanyDetail co={selected} onClose={() => setSelected(null)} onUpdate={upd} onCreateDeal={createDeal} />}
+
+      {/* Smart Chat Panel */}
+      {showChat && (
+        <div style={{ position: "fixed", top: 0, right: 0, width: 440, height: "100vh", background: "#0a0e17", borderLeft: "1px solid #1e293b", zIndex: 300, display: "flex", flexDirection: "column", boxShadow: "-4px 0 32px rgba(0,0,0,0.5)" }}>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #1e293b", display: "flex", alignItems: "center", justifyContent: "space-between", background: "linear-gradient(135deg, #0a1628, #0f1d35)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 20 }}>{"\u{1F9E0}"}</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#f1f5f9" }}>CRM AI Assistant</div>
+                <div style={{ fontSize: 10, color: "#4b6a9b" }}>Search emails, contacts, deals, listings</div>
+              </div>
+            </div>
+            <button onClick={() => setShowChat(false)} style={{ background: "none", border: "none", color: "#64748b", fontSize: 20, cursor: "pointer" }}>{"\u2715"}</button>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px" }}>
+            {chatMessages.map((m, i) => (
+              <div key={i} style={{ marginBottom: 16, display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
+                <div style={{ background: m.role === "user" ? "#1e3a6e" : "#111827", border: "1px solid " + (m.role === "user" ? "#2563eb40" : "#1e293b"), borderRadius: m.role === "user" ? "12px 12px 2px 12px" : "2px 12px 12px 12px", padding: "10px 14px", maxWidth: "90%", color: "#d1dbed", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {chatLoading && <div style={{ display: "flex", gap: 4, padding: 8 }}>{[0,1,2].map(j => <div key={j} style={{ width: 6, height: 6, borderRadius: "50%", background: "#3b82f6", animation: "pulse 1.4s ease-in-out " + (j*0.2) + "s infinite" }} />)}<style>{"@keyframes pulse{0%,80%,100%{opacity:.3;transform:scale(.8)}40%{opacity:1;transform:scale(1.1)}}"}</style></div>}
+          </div>
+          <div style={{ padding: "12px 16px", borderTop: "1px solid #1e293b", background: "#080e1a" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+              {["Who should I call first?", "Hot deal signals", "Who's gone quiet?", "Compare our listings"].map((s, i) => (
+                <button key={i} onClick={() => setChatInput(s)} style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 16, padding: "4px 10px", color: "#60a5fa", fontSize: 10, cursor: "pointer" }}>{s}</button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendChat()} placeholder="Ask about any company, deal, or contact..." disabled={chatLoading} style={{ flex: 1, background: "#111827", border: "1px solid #1e293b", borderRadius: 8, padding: "10px 14px", color: "#d1dbed", fontSize: 13, outline: "none" }} />
+              <button onClick={sendChat} disabled={chatLoading || !chatInput.trim()} style={{ background: chatLoading ? "#1e293b" : "#2563eb", border: "none", borderRadius: 8, padding: "10px 16px", color: "#fff", fontWeight: 700, fontSize: 13, cursor: chatLoading ? "not-allowed" : "pointer" }}>{chatLoading ? "..." : "Ask"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
