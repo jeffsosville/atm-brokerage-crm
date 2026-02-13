@@ -772,7 +772,20 @@ export default function CRM() {
 
   useEffect(() => {
     api("crm_stats?select=*").then(d => { if (d && d[0]) { const s = d[0]; setStats({ total: s.total_active, withEmail: s.with_email, withPhone: s.with_phone, withAtmCount: s.with_atm_count, confirmed: s.confirmed_atm, operators: s.operators }); } }).catch(e => console.error(e));
-    api("atm_notifications?dismissed_at=is.null&order=priority.asc,created_at.desc&limit=50").then(d => setNotifications(d || [])).catch(e => console.error(e));
+    api("atm_notifications?dismissed_at=is.null&order=priority.asc,created_at.desc&limit=50").then(async (notifs) => {
+      if (!notifs || notifs.length === 0) { setNotifications([]); return; }
+      // Fetch company names for each notification
+      const cids = [...new Set(notifs.filter(n => n.company_id).map(n => n.company_id))];
+      const coNames = {};
+      for (let i = 0; i < cids.length; i += 10) {
+        const batch = cids.slice(i, i + 10);
+        try {
+          const cos = await api("atm_companies?select=id,company_name&id=in.(" + batch.join(",") + ")");
+          cos.forEach(c => { coNames[c.id] = c.company_name; });
+        } catch(e) {}
+      }
+      setNotifications(notifs.map(n => ({ ...n, company_name: coNames[n.company_id] || "" })));
+    }).catch(e => console.error(e));
     const t = today();
     Promise.all([
       api("atm_companies?select=id&next_followup_at=lt." + t + "&next_followup_at=not.is.null&category=not.in.(dead_url,bank,not_atm,dead_url_maybe_atm)"),
@@ -910,7 +923,7 @@ export default function CRM() {
 
       const history = chatMessages.slice(-6).map(m => ({ role: m.role, content: m.content }));
       history.push({ role: "user", content: "[CRM Data]\n" + ctx.join("\n") + "\n\n[Question]\n" + q });
-      const resp = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: "You are the ATM Brokerage CRM AI assistant helping John (the broker). You have access to email history, relationship summaries, contacts, deals, and listings. Be direct and specific - use company names, contact names, email counts, dates. Format concisely.", messages: history }) });
+      const resp = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: "You are the ATM Brokerage CRM AI assistant helping John (the broker). You have access to email history, relationship summaries, contacts, deals, and listings. Be direct and specific - use company names, contact names, email counts, dates. Format concisely.", messages: history }) });
       if (!resp.ok) throw new Error("API " + resp.status);
       const data = await resp.json();
       setChatMessages(p => [...p, { role: "assistant", content: data.content?.map(c => c.text || "").join("\n") || "No response." }]);
@@ -954,11 +967,13 @@ export default function CRM() {
                   </div>
                   {notifications.map(n => {
                     const pc = { urgent: "#ef4444", high: "#f59e0b", normal: "#3b82f6", low: "#64748b" };
-                    const tc = { follow_up_needed: "\u{1F4E9}", deal_stale: "\u{1F4C9}", relationship_decay: "\u{1F4A4}", hot_signal: "\u{1F525}" };
+                    const tc = { follow_up_needed: "\u{1F4E9}", deal_stale: "\u{1F4C9}", relationship_decay: "\u{1F525}", hot_signal: "\u{1F4A1}" };
+                    const pl = { urgent: "URGENT", high: "HIGH", normal: "", low: "" };
                     return (
                       <div key={n.id} style={{ padding: "10px 8px", borderBottom: "1px solid #1a1f2e", display: "flex", gap: 10, alignItems: "flex-start" }}>
                         <span style={{ fontSize: 14, flexShrink: 0, marginTop: 2 }}>{tc[n.type] || "\u{26A0}"}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
+                          {n.company_name && <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 3 }}>{n.company_name} {pl[n.priority] ? <span style={{ fontSize: 9, fontWeight: 700, color: pc[n.priority], background: pc[n.priority] + "20", padding: "1px 5px", borderRadius: 3, marginLeft: 6 }}>{pl[n.priority]}</span> : null}</div>}
                           <div style={{ fontSize: 12, fontWeight: 600, color: pc[n.priority] || "#e2e8f0", marginBottom: 2 }}>{n.title}</div>
                           <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>{n.message}</div>
                           {n.suggested_action && <div style={{ fontSize: 11, color: "#3b82f6", marginTop: 4 }}>{"\u2192"} {n.suggested_action}</div>}
