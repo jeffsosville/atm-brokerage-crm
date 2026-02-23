@@ -88,6 +88,17 @@ RULES:
       question, ai_answer: answer, ai_confidence: confidence, escalated,
     });
 
+    // Notify John on escalated questions
+    if (escalated) {
+      await supaPost("atm_notifications", {
+        type: "escalation",
+        title: "Buyer needs help: " + deal?.deal_name,
+        message: question.substring(0, 200),
+        priority: 1,
+        metadata: JSON.stringify({ deal_id: dealId, dl_number: deal?.dl_number, session: sessionId, question, ai_answer: answer }),
+      });
+    }
+
     await supaPost("atm_activity_log", {
       type: "concierge", subject: `Buyer question: ${question.substring(0, 100)}`,
       body_preview: answer.substring(0, 200), date: new Date().toISOString(),
