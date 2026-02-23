@@ -94,8 +94,8 @@ RULES:
         type: "escalation",
         title: "Buyer needs help: " + deal?.deal_name,
         message: question.substring(0, 200),
-        priority: 1,
-        metadata: JSON.stringify({ deal_id: dealId, dl_number: deal?.dl_number, session: sessionId, question, ai_answer: answer }),
+        priority: "high",
+        deal_id: dealId, suggested_action: "Answer buyer question in Deal Hub",
       });
     }
 
