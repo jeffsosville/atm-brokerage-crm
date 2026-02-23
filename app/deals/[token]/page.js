@@ -126,7 +126,7 @@ export default function DealHub() {
       </div>
 
       {chatOpen && (
-        <div style={{ position: "fixed", top: 0, right: 0, width: 420, maxWidth: "100vw", height: "100vh", background: "#fff", boxShadow: "-4px 0 32px rgba(0,0,0,0.15)", zIndex: 9999, display: "flex", flexDirection: "column" }}>
+        <div style={{ position: "fixed", top: 0, right: 0, width: 420, maxWidth: "100vw", height: "100dvh", background: "#fff", boxShadow: "-4px 0 32px rgba(0,0,0,0.15)", zIndex: 9999, display: "flex", flexDirection: "column" }}>
           <div style={{ background: "linear-gradient(135deg, #0f172a, #1e293b)", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div><div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>Deal Concierge</div><div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>{deal?.dl_number || "ATM Brokerage"}</div></div>
             <button onClick={function() { setChatOpen(false); }} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 8, cursor: "pointer", fontSize: 18 }}>✕</button>
