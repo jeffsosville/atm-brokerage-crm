@@ -142,13 +142,6 @@ export default function DealHub() {
             ); })}
             {chatLoading && <div style={{ display: "flex", justifyContent: "flex-start" }}><div style={{ padding: "10px 14px", borderRadius: "14px 14px 14px 4px", background: "#f1f5f9", color: "#64748b", fontSize: 14 }}>Thinking...</div></div>}
           </div>
-          {messages.length <= 2 && (
-            <div style={{ padding: "0 16px 8px", display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {["What's the monthly net income?", "How many ATMs are TR31 compliant?", "Tell me about the equipment", "What's the ROI?"].map(function(q) { return (
-                <button key={q} onClick={function() { setChatInput(q); }} style={{ padding: "6px 12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 20, fontSize: 12, color: "#475569", cursor: "pointer" }}>{q}</button>
-              ); })}
-            </div>
-          )}
           <div style={{ borderTop: "1px solid #e2e8f0", padding: 12, display: "flex", gap: 8 }}>
             <input value={chatInput} onChange={function(e) { setChatInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }} placeholder="Ask about this listing..." disabled={chatLoading} style={{ flex: 1, padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 14, outline: "none" }} />
             <button onClick={sendChat} disabled={chatLoading || !chatInput.trim()} style={{ padding: "10px 18px", background: chatLoading || !chatInput.trim() ? "#94a3b8" : "#1e40af", color: "#fff", border: "none", borderRadius: 10, fontWeight: 600, cursor: chatLoading || !chatInput.trim() ? "not-allowed" : "pointer" }}>{chatLoading ? "..." : "Send"}</button>
