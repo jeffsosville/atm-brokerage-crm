@@ -880,7 +880,38 @@ export default function CRM() {
         const fullFound = await safeFetch("atm_companies?select=id,company_name,email,phone,city,state,segment,category,estimated_atm_count&company_name=ilike.*" + encodeURIComponent(words.join(" ")) + "*&limit=3");
         matchCos = matchCos.concat(fullFound);
       }
-      matchCos = matchCos.filter((c, i, a) => a.findIndex(x => x.id === c.id) === i).slice(0, 8);
+      // Search by state/city (handles "Oregon", "Dallas", "TX", etc)
+      const states = {"alabama":"AL","alaska":"AK","arizona":"AZ","arkansas":"AR","california":"CA","colorado":"CO","connecticut":"CT","delaware":"DE","florida":"FL","georgia":"GA","hawaii":"HI","idaho":"ID","illinois":"IL","indiana":"IN","iowa":"IA","kansas":"KS","kentucky":"KY","louisiana":"LA","maine":"ME","maryland":"MD","massachusetts":"MA","michigan":"MI","minnesota":"MN","mississippi":"MS","missouri":"MO","montana":"MT","nebraska":"NE","nevada":"NV","new hampshire":"NH","new jersey":"NJ","new mexico":"NM","new york":"NY","north carolina":"NC","north dakota":"ND","ohio":"OH","oklahoma":"OK","oregon":"OR","pennsylvania":"PA","rhode island":"RI","south carolina":"SC","south dakota":"SD","tennessee":"TN","texas":"TX","utah":"UT","vermont":"VT","virginia":"VA","washington":"WA","west virginia":"WV","wisconsin":"WI","wyoming":"WY"};
+      const stateAbbrs = Object.values(states);
+      for (const w of ql.split(/\s+/)) {
+        const wl = w.toLowerCase().replace(/[^a-z]/g, "");
+        const abbr = states[wl] || (wl.length === 2 && stateAbbrs.includes(wl.toUpperCase()) ? wl.toUpperCase() : null);
+        if (abbr) {
+          const stateCompanies = await safeFetch("atm_companies?select=id,company_name,email,phone,city,state,segment,category,estimated_atm_count&state=ilike." + abbr + "&limit=25");
+          matchCos = matchCos.concat(stateCompanies);
+        }
+        // Also search by city name (4+ chars)
+        if (wl.length >= 4 && !states[wl]) {
+          const cityCompanies = await safeFetch("atm_companies?select=id,company_name,email,phone,city,state,segment,category,estimated_atm_count&city=ilike.*" + encodeURIComponent(w) + "*&limit=15");
+          matchCos = matchCos.concat(cityCompanies);
+        }
+      }
+      // Also search contacts table for names, emails
+      let contactMatches = [];
+      for (const w of words.slice(0, 3)) {
+        const byName = await safeFetch("atm_contacts?select=id,company_id,first_name,last_name,email,phone,title&or=(first_name.ilike.*" + encodeURIComponent(w) + "*,last_name.ilike.*" + encodeURIComponent(w) + "*,email.ilike.*" + encodeURIComponent(w) + "*)&limit=10");
+        contactMatches = contactMatches.concat(byName);
+      }
+      contactMatches = contactMatches.filter((c, i, a) => a.findIndex(x => x.id === c.id) === i).slice(0, 15);
+      // Load companies for matched contacts
+      for (const ct of contactMatches) {
+        if (ct.company_id && !coMap[ct.company_id]) {
+          const c = await safeFetch("atm_companies?select=id,company_name,email,phone,city,state,segment,category,estimated_atm_count&id=eq." + ct.company_id + "&limit=1");
+          if (c[0]) { matchCos.push(c[0]); }
+        }
+      }
+
+      matchCos = matchCos.filter((c, i, a) => a.findIndex(x => x.id === c.id) === i).slice(0, 25);
       matchCos.forEach(c => { coMap[c.id] = c; });
 
       if (matchCos.length > 0) {
