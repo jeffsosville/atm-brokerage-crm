@@ -31,7 +31,7 @@ export default function Admin() {
   const createDeal = async () => {
     if (!nd.deal_name) { setMsg("Name required"); return; }
     setLoading("c");
-    const r = await api("atm_deals", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ deal_name: nd.deal_name, atm_count: nd.atm_count ? parseInt(nd.atm_count) : null, asking_price: nd.asking_price ? parseFloat(nd.asking_price) : null, route_state: nd.route_state || null, route_cities: nd.route_cities || null, stage: nd.stage }) });
+    const resp = await fetch("/api/admin/deal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deal_name: nd.deal_name, atm_count: nd.atm_count ? parseInt(nd.atm_count) : null, asking_price: nd.asking_price ? parseFloat(nd.asking_price) : null, route_state: nd.route_state || null, route_cities: nd.route_cities || null, stage: nd.stage }) }); const r = await resp.json();
     setMsg("Created! DL#: " + (r[0]?.dl_number || "assigned"));
     setNd({ deal_name: "", atm_count: "", asking_price: "", route_state: "", route_cities: "", stage: "prospect" });
     loadDeals(); setLoading("");
