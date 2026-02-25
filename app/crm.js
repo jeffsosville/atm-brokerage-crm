@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "../lib/auth";
 
 const SB = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
 const SK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indncm14aHhvem95dmNtdmJmdXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzI5MTUsImV4cCI6MjA3NDQwODkxNX0.zuOIlNRTC3kjBWHxp9_sef2V9pe9erDSljEcJ2EL9to";
@@ -755,6 +756,8 @@ export default function CRM() {
   const [segFilter, setSegFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [followFilter, setFollowFilter] = useState("all");
+  const [verticalFilter, setVerticalFilter] = useState("all");
+  const { profile } = useAuth();
   const [hasEmail, setHasEmail] = useState(false);
   const [hasPhone, setHasPhone] = useState(false);
   const [sortBy, setSortBy] = useState("atm_count");
@@ -812,6 +815,7 @@ export default function CRM() {
       const data = await api(q);
       setCompanies(data);
       let cq = "atm_companies?select=count&category=not.in.(dead_url,bank,not_atm,dead_url_maybe_atm)";
+      if (verticalFilter !== "all") { q += "&vertical=eq." + verticalFilter; cq += "&vertical=eq." + verticalFilter; } else if (profile?.role === "broker" && profile?.assigned_vertical) { q += "&vertical=eq." + profile.assigned_vertical; cq += "&vertical=eq." + profile.assigned_vertical; }
       if (catFilter !== "all") cq += "&category=eq." + catFilter;
       if (segFilter !== "all") cq += "&segment=eq." + segFilter;
       if (statusFilter !== "all") cq += "&status=eq." + statusFilter;
@@ -1036,6 +1040,11 @@ export default function CRM() {
             </div>
           )}
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {profile?.role === "super_user" ? (
+              <select value={verticalFilter} onChange={e => setVerticalFilter(e.target.value)} style={ss}><option value="all">All Verticals</option><option value="ATM">ATM</option><option value="Cleaning">Cleaning</option><option value="Vending">Vending</option><option value="HVAC">HVAC</option><option value="Pest">Pest</option><option value="Landscaping">Landscaping</option></select>
+            ) : (
+              <span style={{ ...ss, opacity: 0.6 }}>{profile?.assigned_vertical || "ATM"}</span>
+            )}
             <select value={catFilter} onChange={e => setCatFilter(e.target.value)} style={ss}><option value="all">All Categories</option>{CATS.filter(c => c !== "all").map(c => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}</select>
             <select value={segFilter} onChange={e => setSegFilter(e.target.value)} style={ss}><option value="all">All Segments</option>{SEGS.filter(s => s !== "all").map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}</select>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={ss}><option value="all">All Statuses</option>{STATUSES.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}</select>
