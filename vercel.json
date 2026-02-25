@@ -1,0 +1,6 @@
+{
+  "crons": [{
+    "path": "/api/admin/daily-digest?secret=atm2026daily",
+    "schedule": "0 13 * * *"
+  }]
+}
