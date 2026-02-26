@@ -14,13 +14,11 @@ export async function POST(request) {
   try {
     const body = await request.json();
 
-    // Optional security check
     const authHeader = request.headers.get("authorization");
     if (WEBHOOK_SECRET && authHeader !== "Bearer " + WEBHOOK_SECRET) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Map WPForms fields
     const buyerName  = body.buyer_name  || body.name  || body.full_name || "";
     const buyerEmail = body.buyer_email || body.email || "";
     const pageUrl    = body.deal_slug   || body.page_url || "";
@@ -30,18 +28,16 @@ export async function POST(request) {
       return Response.json({ error: "buyer_email required" }, { status: 400 });
     }
 
-    // Match deal by page URL
+    // Match deal by page URL in metadata, or fallback to single listed deal
     let deal = null;
     if (pageUrl) {
       const { data } = await supabase
         .from("atm_deals")
         .select("*")
-        .filter("metadata->listing_url", "cs", `"${pageUrl}"`)
+        .ilike("deal_name", "%" + pageUrl.split("/").pop().replace(/-/g, " ") + "%")
         .limit(1);
       if (data?.length) deal = data[0];
     }
-
-    // Fallback: only one active listed deal
     if (!deal) {
       const { data } = await supabase
         .from("atm_deals")
@@ -51,11 +47,20 @@ export async function POST(request) {
       if (data?.length === 1) deal = data[0];
     }
 
-    // Generate buyer token
+    // Generate token
     const token = crypto.randomBytes(24).toString("hex");
     const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Store buyer access record
+    // Insert into deal_tokens (what the Deal Hub reads)
+    await supabase.from("deal_tokens").insert({
+      deal_id:    deal?.id || null,
+      listing_id: deal?.id || null,
+      token,
+      expires_at: expiresAt,
+      created_at: new Date().toISOString(),
+    });
+
+    // Insert into deal_buyer_access (buyer contact info)
     await supabase.from("deal_buyer_access").insert({
       deal_id:     deal?.id || null,
       token,
@@ -104,7 +109,7 @@ export async function POST(request) {
       });
     }
 
-    // Log to CRM activity
+    // Log to CRM
     await supabase.from("atm_activity_log").insert({
       type: "nda_signed",
       subject: `NDA signed → Deal Room sent: ${buyerName} (${buyerEmail})`,
@@ -120,7 +125,7 @@ export async function POST(request) {
       }),
     });
 
-    // Notify John in CRM
+    // Notify John
     await supabase.from("atm_notifications").insert({
       type:     "nda_signed",
       title:    `New NDA: ${buyerName || buyerEmail}`,
