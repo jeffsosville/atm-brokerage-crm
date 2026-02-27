@@ -984,6 +984,7 @@ export default function CRM() {
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.5px" }}>ATM Brokerage <span style={{ color: "#3b82f6", fontWeight: 400 }}>CRM</span></h1>
             <div style={{ display: "flex", gap: 4 }}>
               <button onClick={() => { setView("crm"); setSelected(null); }} style={tabStyle(view === "crm")}>Companies</button>
+              <button onClick={() => window.location.href="/inbox"} style={tabStyle(false)}>Inbox</button>
               <button onClick={() => { setView("pipeline"); setSelected(null); }} style={tabStyle(view === "pipeline")}>Pipeline</button>
             </div>
           </div>
