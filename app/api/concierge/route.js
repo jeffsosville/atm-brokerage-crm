@@ -26,7 +26,7 @@ const supaPost = async (table, data) => {
 
 export async function POST(request) {
   try {
-    const { dealId, question, sessionId, history } = await request.json();
+    const { dealId, question, token, buyerName, buyerEmail, buyerPhone, history } = await request.json();
     if (!dealId || !question) {
       return Response.json({ error: "dealId and question required" }, { status: 400 });
     }
@@ -47,6 +47,10 @@ export async function POST(request) {
     }
     messages.push({ role: "user", content: question });
 
+    const buyerLine = buyerName || buyerEmail
+      ? `\nBUYER: ${buyerName || "Unknown"}${buyerEmail ? " | " + buyerEmail : ""}${buyerPhone ? " | " + buyerPhone : ""}`
+      : "";
+
     const systemPrompt = `You are the Deal Concierge for ATM Brokerage. You help prospective buyers understand ATM route listings and answer their questions.
 
 DEAL INFORMATION:
@@ -54,7 +58,7 @@ ${deal ? `Name: ${deal.deal_name || "ATM Route Listing"}
 DL#: ${deal.dl_number || "N/A"}
 Asking Price: $${deal.asking_price ? Number(deal.asking_price).toLocaleString() : "Contact for pricing"}
 ATM Count: ${deal.atm_count || "N/A"}
-Location: ${deal.route_cities || ""} ${deal.route_state || ""}` : "Deal information unavailable."}
+Location: ${deal.route_cities || ""} ${deal.route_state || ""}` : "Deal information unavailable."}${buyerLine}
 
 DEAL DOCUMENTS AND DATA:
 ${context}
@@ -83,31 +87,58 @@ RULES:
     const escalated = lowerAnswer.includes("speak with") || lowerAnswer.includes("connect you with") || lowerAnswer.includes("advisor") || lowerAnswer.includes("don't have that information");
     const confidence = escalated ? 0.5 : 0.85;
 
+    // Save question with full buyer identity
     await supaPost("deal_questions", {
-      deal_id: dealId, dl_number: deal?.dl_number, buyer_session: sessionId,
-      question, ai_answer: answer, ai_confidence: confidence, escalated,
+      deal_id: dealId,
+      dl_number: deal?.dl_number,
+      buyer_session: token || null,
+      buyer_name: buyerName || null,
+      buyer_email: buyerEmail || null,
+      buyer_phone: buyerPhone || null,
+      question,
+      ai_answer: answer,
+      ai_confidence: confidence,
+      escalated,
     });
 
-    // Notify John on escalated questions
+    // Notify John on escalation — with full buyer info
     if (escalated) {
       await supaPost("atm_notifications", {
         type: "escalation",
-        title: "Buyer needs help: " + deal?.deal_name,
-        message: question.substring(0, 200),
+        title: `Buyer needs help: ${buyerName || buyerEmail || "Unknown buyer"} → ${deal?.deal_name}`,
+        message: `"${question.substring(0, 200)}"${buyerEmail ? "\n\nReply to: " + buyerEmail : ""}${buyerPhone ? " | " + buyerPhone : ""}`,
         priority: "high",
-        deal_id: dealId, suggested_action: "Answer buyer question in Deal Hub",
+        metadata: JSON.stringify({
+          deal_id: dealId,
+          buyer_name: buyerName || null,
+          buyer_email: buyerEmail || null,
+          buyer_phone: buyerPhone || null,
+          token: token || null,
+        }),
+        suggested_action: buyerEmail ? "Reply to " + buyerEmail : "Answer buyer question in Deal Hub",
       });
     }
 
     await supaPost("atm_activity_log", {
-      type: "concierge", subject: `Buyer question: ${question.substring(0, 100)}`,
-      body_preview: answer.substring(0, 200), date: new Date().toISOString(),
-      metadata: JSON.stringify({ deal_id: dealId, dl_number: deal?.dl_number, session: sessionId, confidence, escalated }),
+      type: "concierge",
+      subject: `Buyer question: ${question.substring(0, 100)}`,
+      body_preview: answer.substring(0, 200),
+      date: new Date().toISOString(),
+      metadata: JSON.stringify({
+        deal_id: dealId,
+        dl_number: deal?.dl_number,
+        buyer_name: buyerName || null,
+        buyer_email: buyerEmail || null,
+        buyer_phone: buyerPhone || null,
+        token: token || null,
+        confidence,
+        escalated,
+      }),
     });
 
     return Response.json({ answer, confidence, escalated, dlNumber: deal?.dl_number, sources: (chunks || []).length });
   } catch (err) {
     console.error("Concierge error:", err);
-    return Response.json({ error: "Something went wrong", answer: "I'm having trouble right now. Please try again or contact info@atmbrokerage.com." }, { status: 500 });
+    return Response.json({ error: "Something went wrong", answer: "I'm having trouble right now. Please contact info@atmbrokerage.com." }, { status: 500 });
   }
 }

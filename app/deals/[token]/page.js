@@ -25,13 +25,13 @@ export default function DealHub() {
   const token = params.token;
   const [valid, setValid] = useState(null);
   const [deal, setDeal] = useState(null);
+  const [buyer, setBuyer] = useState({ name: "", email: "", phone: "" });
   const [files, setFiles] = useState([]);
   const [error, setError] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const [sessionId] = useState(() => "buyer-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8));
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -42,12 +42,21 @@ export default function DealHub() {
         if (!tokens.length) { setValid(false); setError("Invalid or expired link."); return; }
         const t = tokens[0];
         if (new Date(t.expires_at) < new Date()) { setValid(false); setError("This link has expired."); return; }
+
+        // Capture buyer identity from token
+        const buyerInfo = {
+          name: t.buyer_name || "",
+          email: t.buyer_email || "",
+          phone: t.buyer_phone || "",
+        };
+        setBuyer(buyerInfo);
+
         const dealId = t.deal_id || t.listing_id;
         const deals = await api("atm_deals?id=eq." + dealId + "&select=*");
         if (deals.length) setDeal(deals[0]);
         const f = await api("listing_files?listing_id=eq." + dealId + "&is_active=eq.true&select=*&order=uploaded_at.desc");
         setFiles(f || []);
-        setMessages([{ role: "assistant", content: "Hi! I'm the Deal Concierge for " + (deals[0]?.deal_name || "this ATM route") + (deals[0]?.dl_number ? " (" + deals[0].dl_number + ")" : "") + ". I can answer questions about the financials, equipment, operations, and help you understand if this route is right for you. What would you like to know?" }]);
+        setMessages([{ role: "assistant", content: "Hi" + (buyerInfo.name ? " " + buyerInfo.name.split(" ")[0] : "") + "! I'm the Deal Concierge for " + (deals[0]?.deal_name || "this ATM route") + (deals[0]?.dl_number ? " (" + deals[0].dl_number + ")" : "") + ". I can answer questions about the financials, equipment, operations, and help you understand if this route is right for you. What would you like to know?" }]);
         setValid(true);
       } catch (e) { setValid(false); setError("Something went wrong."); }
     })();
@@ -73,7 +82,15 @@ export default function DealHub() {
     try {
       const resp = await fetch("/api/concierge", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId: deal?.id, question: q, sessionId: sessionId, history: messages.slice(-6) }),
+        body: JSON.stringify({
+          dealId: deal?.id,
+          question: q,
+          token: token,
+          buyerName: buyer.name,
+          buyerEmail: buyer.email,
+          buyerPhone: buyer.phone,
+          history: messages.slice(-6),
+        }),
       });
       if (!resp.ok) throw new Error("API error");
       const data = await resp.json();
@@ -128,7 +145,10 @@ export default function DealHub() {
       {chatOpen && (
         <div style={{ position: "fixed", top: 0, right: 0, width: 420, maxWidth: "100vw", height: "100dvh", background: "#fff", boxShadow: "-4px 0 32px rgba(0,0,0,0.15)", zIndex: 9999, display: "flex", flexDirection: "column" }}>
           <div style={{ background: "linear-gradient(135deg, #0f172a, #1e293b)", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div><div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>Deal Concierge</div><div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>{deal?.dl_number || "ATM Brokerage"}</div></div>
+            <div>
+              <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>Deal Concierge</div>
+              <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>{deal?.dl_number || "ATM Brokerage"}{buyer.name ? " · " + buyer.name : ""}</div>
+            </div>
             <button onClick={function() { setChatOpen(false); }} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 8, cursor: "pointer", fontSize: 18 }}>✕</button>
           </div>
           <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
