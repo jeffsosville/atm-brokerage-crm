@@ -15,7 +15,7 @@ export default function Page() {
   if (!user) return <LoginPage />;
   return (
     <>
-      <button onClick={signOut} style={{ position: "fixed", top: 12, right: 16, zIndex: 9999, background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
+      <button onClick={signOut} style={{ position: "fixed", top: 12, right: 16, zIndex: 10, background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
         Sign Out
       </button>
       <CRM />
