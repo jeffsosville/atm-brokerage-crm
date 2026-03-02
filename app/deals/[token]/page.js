@@ -73,16 +73,18 @@ export default function DealHub() {
     setGateSubmitting(true);
     setGateError("");
     try {
-      // Save buyer info to the token row
-      await api("deal_tokens?token=eq." + token, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+      // Save buyer info via server API (uses service role key)
+      const saveResp = await fetch("/api/buyer-identify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          token,
           buyer_name: gateInput.name.trim() || null,
           buyer_email: gateInput.email.trim(),
           buyer_phone: gateInput.phone.trim() || null,
         }),
       });
+      if (!saveResp.ok) throw new Error("Failed to save buyer info");
 
       const buyerInfo = { name: gateInput.name.trim(), email: gateInput.email.trim(), phone: gateInput.phone.trim() };
       setBuyer(buyerInfo);
