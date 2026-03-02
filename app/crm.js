@@ -991,7 +991,7 @@ export default function CRM() {
           {view === "crm" && <input type="text" placeholder="Search companies, cities, states..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: 320, background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: "10px 14px", borderRadius: 6, fontSize: 13, outline: "none" }} />}
           <button onClick={() => setShowChat(!showChat)} style={{ background: showChat ? "#1e3a5f" : "#1a1f2e", color: showChat ? "#60a5fa" : "#e2e8f0", border: "1px solid " + (showChat ? "#3b82f640" : "#334155"), padding: "8px 14px", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{"\u{1F9E0}"} Ask AI</button>
           {notifications.length > 0 && (
-            <div style={{ position: "relative" }}>
+            <div style={{ position: "relative", zIndex: 9999 }}>
               <button onClick={() => setShowNotifications(!showNotifications)} style={{ background: showNotifications ? "#4a2020" : "#1a1f2e", color: showNotifications ? "#ef4444" : "#e2e8f0", border: "1px solid " + (showNotifications ? "#ef444440" : "#334155"), padding: "8px 14px", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer", position: "relative" }}>
                 {"\u{1F514}"} {notifications.length}
               </button>
