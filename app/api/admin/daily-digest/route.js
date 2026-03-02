@@ -16,7 +16,7 @@ export async function GET(request) {
 
   const { data: escalated } = await supabase
     .from("deal_questions")
-    .select("question, ai_answer, deal_id, buyer_session, created_at")
+    .select("question, ai_answer, deal_id, buyer_session, buyer_name, buyer_email, buyer_phone, created_at")
     .eq("escalated", true)
     .gte("created_at", yesterday)
     .order("created_at", { ascending: false });
@@ -85,8 +85,10 @@ export async function GET(request) {
       html += `
         <div style="background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
           <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">${deal.deal_name || "Unknown Deal"} (${deal.dl_number || ""})</div>
+          ${q.buyer_name || q.buyer_email ? `<div style="font-size: 13px; color: #1e40af; font-weight: 600; margin-bottom: 6px;">👤 ${q.buyer_name || ""}${q.buyer_email ? ' &lt;' + q.buyer_email + '&gt;' : ''}${q.buyer_phone ? ' · ' + q.buyer_phone : ''}</div>` : ''}
           <div style="font-size: 14px; font-weight: bold; color: #1e293b; margin-bottom: 6px;">Buyer asked: "${q.question}"</div>
           <div style="font-size: 12px; color: #475569;">AI answered: "${(q.ai_answer || "").substring(0, 150)}..."</div>
+          ${q.buyer_email ? `<a href="mailto:${q.buyer_email}" style="display:inline-block; margin-top: 6px; padding: 4px 10px; background: #1e40af; color: white; border-radius: 4px; font-size: 11px; text-decoration: none;">Reply to ${q.buyer_name || q.buyer_email}</a>` : ''}
           <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">${new Date(q.created_at).toLocaleString()}</div>
         </div>`;
     });
