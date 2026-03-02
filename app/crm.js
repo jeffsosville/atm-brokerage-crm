@@ -1003,16 +1003,33 @@ export default function CRM() {
                   </div>
                   {notifications.map(n => {
                     const pc = { urgent: "#ef4444", high: "#f59e0b", normal: "#3b82f6", low: "#64748b" };
-                    const tc = { follow_up_needed: "\u{1F4E9}", deal_stale: "\u{1F4C9}", relationship_decay: "\u{1F525}", hot_signal: "\u{1F4A1}" };
+                    const tc = { follow_up_needed: "\u{1F4E9}", deal_stale: "\u{1F4C9}", relationship_decay: "\u{1F525}", hot_signal: "\u{1F4A1}", escalation: "\u{1F525}" };
                     const pl = { urgent: "URGENT", high: "HIGH", normal: "", low: "" };
+                    const isEscalation = n.type === "escalation";
+                    const meta = (() => { try { return n.metadata ? JSON.parse(n.metadata) : {}; } catch(e) { return {}; } })();
+                    const isHotBuyer = n.title && n.title.includes("Hot buyer");
                     return (
-                      <div key={n.id} style={{ padding: "10px 8px", borderBottom: "1px solid #1a1f2e", display: "flex", gap: 10, alignItems: "flex-start" }}>
-                        <span style={{ fontSize: 14, flexShrink: 0, marginTop: 2 }}>{tc[n.type] || "\u{26A0}"}</span>
+                      <div key={n.id} style={{ padding: "10px 8px", borderBottom: "1px solid #1a1f2e", display: "flex", gap: 10, alignItems: "flex-start", background: isEscalation ? (isHotBuyer ? "rgba(239,68,68,0.05)" : "rgba(245,158,11,0.05)") : "transparent", borderRadius: isEscalation ? 6 : 0 }}>
+                        <span style={{ fontSize: 14, flexShrink: 0, marginTop: 2 }}>{isHotBuyer ? "\uD83D\uDD25" : (tc[n.type] || "\u26A0")}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           {n.company_name && <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 3 }}>{n.company_name} {pl[n.priority] ? <span style={{ fontSize: 9, fontWeight: 700, color: pc[n.priority], background: pc[n.priority] + "20", padding: "1px 5px", borderRadius: 3, marginLeft: 6 }}>{pl[n.priority]}</span> : null}</div>}
-                          <div style={{ fontSize: 12, fontWeight: 600, color: pc[n.priority] || "#e2e8f0", marginBottom: 2 }}>{n.title}</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: isHotBuyer ? "#ef4444" : (pc[n.priority] || "#e2e8f0"), marginBottom: 2 }}>{n.title}</div>
                           <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>{n.message}</div>
-                          {n.suggested_action && <div style={{ fontSize: 11, color: "#3b82f6", marginTop: 4 }}>{"\u2192"} {n.suggested_action}</div>}
+                          {isEscalation && (meta.buyer_email || meta.buyer_phone) && (
+                            <div style={{ marginTop: 6, padding: "6px 8px", background: "#0f1219", borderRadius: 4, border: "1px solid #1e293b" }}>
+                              {meta.buyer_name && <div style={{ fontSize: 11, fontWeight: 700, color: "#e2e8f0", marginBottom: 2 }}>{meta.buyer_name}</div>}
+                              {meta.buyer_email && <div style={{ fontSize: 11, color: "#60a5fa" }}>{meta.buyer_email}</div>}
+                              {meta.buyer_phone && <div style={{ fontSize: 11, color: "#94a3b8" }}>{meta.buyer_phone}</div>}
+                            </div>
+                          )}
+                          <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                            {isEscalation && meta.buyer_email && (
+                              <a href={"mailto:" + meta.buyer_email + "?subject=RE: Your inquiry about " + (n.title || "ATM Route")} style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: isHotBuyer ? "#dc2626" : "#1e40af", padding: "3px 8px", borderRadius: 4, textDecoration: "none" }}>
+                                {isHotBuyer ? "\uD83D\uDD25 Reply to Hot Buyer" : "Reply"}
+                              </a>
+                            )}
+                            {n.suggested_action && !isEscalation && <div style={{ fontSize: 11, color: "#3b82f6" }}>{"\u2192"} {n.suggested_action}</div>}
+                          </div>
                         </div>
                         <button onClick={async (e) => { e.stopPropagation(); try { await apiPatch("atm_notifications?id=eq." + n.id, { dismissed_at: new Date().toISOString() }); setNotifications(p => p.filter(x => x.id !== n.id)); } catch(err) { console.error(err); } }} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 14, padding: "2px 4px", flexShrink: 0 }}>{"\u2715"}</button>
                       </div>
