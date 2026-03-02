@@ -26,6 +26,10 @@ export default function DealHub() {
   const [valid, setValid] = useState(null);
   const [deal, setDeal] = useState(null);
   const [buyer, setBuyer] = useState({ name: "", email: "", phone: "" });
+  const [gateInput, setGateInput] = useState({ name: "", email: "", phone: "" });
+  const [gateSubmitting, setGateSubmitting] = useState(false);
+  const [gateError, setGateError] = useState("");
+  const [gateComplete, setGateComplete] = useState(false);
   const [files, setFiles] = useState([]);
   const [error, setError] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
@@ -43,26 +47,52 @@ export default function DealHub() {
         const t = tokens[0];
         if (new Date(t.expires_at) < new Date()) { setValid(false); setError("This link has expired."); return; }
 
-        // Capture buyer identity from token
-        const buyerInfo = {
-          name: t.buyer_name || "",
-          email: t.buyer_email || "",
-          phone: t.buyer_phone || "",
-        };
-        setBuyer(buyerInfo);
-
         const dealId = t.deal_id || t.listing_id;
         const deals = await api("atm_deals?id=eq." + dealId + "&select=*");
         if (deals.length) setDeal(deals[0]);
         const f = await api("listing_files?listing_id=eq." + dealId + "&is_active=eq.true&select=*&order=uploaded_at.desc");
         setFiles(f || []);
-        setMessages([{ role: "assistant", content: "Hi" + (buyerInfo.name ? " " + buyerInfo.name.split(" ")[0] : "") + "! I'm the Deal Concierge for " + (deals[0]?.deal_name || "this ATM route") + (deals[0]?.dl_number ? " (" + deals[0].dl_number + ")" : "") + ". I can answer questions about the financials, equipment, operations, and help you understand if this route is right for you. What would you like to know?" }]);
+
+        // If buyer info already on token, skip gate
+        if (t.buyer_email) {
+          const buyerInfo = { name: t.buyer_name || "", email: t.buyer_email || "", phone: t.buyer_phone || "" };
+          setBuyer(buyerInfo);
+          setGateComplete(true);
+          setMessages([{ role: "assistant", content: "Hi" + (t.buyer_name ? " " + t.buyer_name.split(" ")[0] : "") + "! I'm the Deal Concierge for " + (deals[0]?.deal_name || "this ATM route") + ". What would you like to know?" }]);
+        }
+
         setValid(true);
       } catch (e) { setValid(false); setError("Something went wrong."); }
     })();
   }, [token]);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
+
+  const submitGate = async () => {
+    if (!gateInput.email.trim()) { setGateError("Email is required."); return; }
+    setGateSubmitting(true);
+    setGateError("");
+    try {
+      // Save buyer info to the token row
+      await api("deal_tokens?token=eq." + token, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({
+          buyer_name: gateInput.name.trim() || null,
+          buyer_email: gateInput.email.trim(),
+          buyer_phone: gateInput.phone.trim() || null,
+        }),
+      });
+
+      const buyerInfo = { name: gateInput.name.trim(), email: gateInput.email.trim(), phone: gateInput.phone.trim() };
+      setBuyer(buyerInfo);
+      setGateComplete(true);
+      setMessages([{ role: "assistant", content: "Hi" + (buyerInfo.name ? " " + buyerInfo.name.split(" ")[0] : "") + "! I'm the Deal Concierge for " + (deal?.deal_name || "this ATM route") + (deal?.dl_number ? " (" + deal.dl_number + ")" : "") + ". I can answer questions about the financials, equipment, operations, and help you understand if this route is right for you. What would you like to know?" }]);
+    } catch (e) {
+      setGateError("Something went wrong. Please try again.");
+    }
+    setGateSubmitting(false);
+  };
 
   const viewFile = async (file) => {
     try {
@@ -101,9 +131,78 @@ export default function DealHub() {
     setChatLoading(false);
   };
 
-  if (valid === null) return (<div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", fontFamily: "system-ui" }}><div style={{ textAlign: "center" }}><div style={{ fontSize: 32, marginBottom: 16 }}>Loading Deal Room...</div><div style={{ color: "#64748b" }}>Verifying access</div></div></div>);
+  if (valid === null) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", fontFamily: "system-ui" }}>
+      <div style={{ textAlign: "center" }}><div style={{ fontSize: 32, marginBottom: 16 }}>Loading Deal Room...</div><div style={{ color: "#64748b" }}>Verifying access</div></div>
+    </div>
+  );
 
-  if (!valid) return (<div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", fontFamily: "system-ui" }}><div style={{ textAlign: "center", maxWidth: 400, padding: 40, background: "#fff", borderRadius: 16, boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}><div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div><h2>Access Denied</h2><p style={{ color: "#64748b" }}>{error}</p></div></div>);
+  if (!valid) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", fontFamily: "system-ui" }}>
+      <div style={{ textAlign: "center", maxWidth: 400, padding: 40, background: "#fff", borderRadius: 16, boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div><h2>Access Denied</h2><p style={{ color: "#64748b" }}>{error}</p>
+      </div>
+    </div>
+  );
+
+  // Gate screen — collect buyer info before showing deal room
+  if (!gateComplete) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0f172a, #1e293b)", fontFamily: "system-ui" }}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 40, maxWidth: 420, width: "100%", margin: "0 24px", boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 12, color: "#3b82f6", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>ATM Brokerage · Confidential</div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a", margin: "0 0 8px" }}>{deal?.deal_name || "ATM Deal Room"}</h2>
+          <p style={{ color: "#64748b", fontSize: 14, margin: 0 }}>Please confirm your details to access the deal room and documents.</p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 }}>Full Name</label>
+            <input
+              value={gateInput.name}
+              onChange={e => setGateInput({ ...gateInput, name: e.target.value })}
+              placeholder="John Smith"
+              style={{ width: "100%", marginTop: 4, padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 }}>Email Address *</label>
+            <input
+              value={gateInput.email}
+              onChange={e => setGateInput({ ...gateInput, email: e.target.value })}
+              onKeyDown={e => e.key === "Enter" && submitGate()}
+              placeholder="john@example.com"
+              type="email"
+              style={{ width: "100%", marginTop: 4, padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 }}>Phone Number</label>
+            <input
+              value={gateInput.phone}
+              onChange={e => setGateInput({ ...gateInput, phone: e.target.value })}
+              onKeyDown={e => e.key === "Enter" && submitGate()}
+              placeholder="555-123-4567"
+              type="tel"
+              style={{ width: "100%", marginTop: 4, padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+
+          {gateError && <p style={{ color: "#ef4444", fontSize: 13, margin: 0 }}>{gateError}</p>}
+
+          <button
+            onClick={submitGate}
+            disabled={gateSubmitting || !gateInput.email.trim()}
+            style={{ marginTop: 4, padding: "12px", background: gateSubmitting || !gateInput.email.trim() ? "#94a3b8" : "#1e40af", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: gateSubmitting || !gateInput.email.trim() ? "not-allowed" : "pointer" }}
+          >
+            {gateSubmitting ? "Verifying..." : "Access Deal Room →"}
+          </button>
+        </div>
+
+        <p style={{ textAlign: "center", color: "#94a3b8", fontSize: 11, marginTop: 16, marginBottom: 0 }}>Your information is kept confidential. All access is logged.</p>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "system-ui, sans-serif" }}>
@@ -156,7 +255,7 @@ export default function DealHub() {
               <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
                 <div style={{ maxWidth: "85%", padding: "10px 14px", borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: msg.role === "user" ? "#1e40af" : "#f1f5f9", color: msg.role === "user" ? "#fff" : "#1e293b", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
                   {msg.content}
-                  {msg.escalated && <div style={{ marginTop: 8, padding: "6px 10px", background: "#dbeafe", borderRadius: 8, fontSize: 12, color: "#1e40af" }}>📋 Flagged for advisor.</div>}
+                  {msg.escalated && <div style={{ marginTop: 8, padding: "6px 10px", background: "#dbeafe", borderRadius: 8, fontSize: 12, color: "#1e40af" }}>📋 Flagged for our team. We'll follow up shortly.</div>}
                 </div>
               </div>
             ); })}
