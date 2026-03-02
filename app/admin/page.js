@@ -18,6 +18,7 @@ export default function Admin() {
   const [tab, setTab] = useState("deals");
   const [nd, setNd] = useState({ deal_name: "", atm_count: "", asking_price: "", route_state: "", route_cities: "", stage: "prospect" });
   const [cimText, setCimText] = useState("");
+  const [sellerNotes, setSellerNotes] = useState("");
   const fRef = useRef(null);
 
   useEffect(() => { if (typeof window !== "undefined" && localStorage.getItem("adm") === "1") setAuthed(true); }, []);
@@ -25,7 +26,15 @@ export default function Admin() {
   const loadDeals = async () => { setDeals(await api("atm_deals?select=*&order=created_at.desc") || []); };
   const loadFiles = async (id) => { setFiles(await api("listing_files?listing_id=eq." + id + "&is_active=eq.true&select=*&order=uploaded_at.desc") || []); };
   const loadTokens = async (id) => { setTokens(await api("deal_tokens?deal_id=eq." + id + "&select=*&order=created_at.desc") || []); };
-  const pick = async (d) => { setSel(d); await loadFiles(d.id); await loadTokens(d.id); };
+  const pick = async (d) => {
+    setSel(d);
+    await loadFiles(d.id);
+    await loadTokens(d.id);
+    // Load existing seller notes back into textarea
+    const chunks = await api("deal_embeddings?deal_id=eq." + d.id + "&source_type=eq.seller_notes&select=content_chunk&order=chunk_index.asc");
+    if (chunks?.length) setSellerNotes(chunks.map(c => c.content_chunk).join(" "));
+    else setSellerNotes("");
+  };
   useEffect(() => { if (authed) loadDeals(); }, [authed]);
 
   const createDeal = async () => {
@@ -55,6 +64,14 @@ export default function Admin() {
     const r = await fetch("/api/admin/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, dlNumber: sel.dl_number, text: cimText, sourceType: "cim", sourceName: "CIM - " + sel.deal_name }) });
     const d = await r.json();
     setMsg(d.error ? "Error: " + d.error : "Ingested " + d.chunks + " chunks!"); setCimText(""); setLoading("");
+  };
+
+  const ingestSellerNotes = async () => {
+    if (!sellerNotes.trim() || !sel) { setMsg("Add seller notes first"); return; }
+    setLoading("s");
+    const r = await fetch("/api/admin/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, dlNumber: sel.dl_number, text: sellerNotes, sourceType: "seller_notes", sourceName: "Seller Notes - " + sel.deal_name }) });
+    const d = await r.json();
+    setMsg(d.error ? "Error: " + d.error : "Seller notes saved (" + d.chunks + " chunks)!"); setLoading("");
   };
 
   const loadFaq = async () => {
@@ -168,6 +185,21 @@ export default function Admin() {
                   </div>
                 </div>
 
+                {/* Seller Notes */}
+                <div style={{ background: "#111827", border: "1px solid #14532d", borderRadius: 10, padding: 16 }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>✍️ Seller Notes</h3>
+                  <p style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>Add color from the seller — why they're selling, what makes this route special, ideal buyer, transition notes. The concierge will use this to answer buyer questions.</p>
+                  <textarea
+                    value={sellerNotes}
+                    onChange={e => setSellerNotes(e.target.value)}
+                    placeholder={"Examples:\n• Why selling: Owner retiring after 12 years, not health-related.\n• What makes it special: All locations are anchor tenants — Walmart, Tops, Price Rite. Very sticky.\n• Transition: Seller will train for 90 days, introduce to all location managers personally.\n• Ideal buyer: Someone who wants passive income. A manager handles all service calls.\n• Financing: Seller open to 10% seller financing for qualified buyer."}
+                    style={{ ...I, minHeight: 180, resize: "vertical", lineHeight: 1.6 }}
+                  />
+                  <button onClick={ingestSellerNotes} disabled={loading === "s"} style={{ ...B, marginTop: 8, background: "#16a34a" }}>
+                    {loading === "s" ? "Saving..." : "Save Seller Notes"}
+                  </button>
+                </div>
+
                 <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: 16 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Buyer Access Links</h3>
@@ -177,7 +209,11 @@ export default function Admin() {
                     <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #1e293b" }}>
                       <div>
                         <div style={{ fontSize: 12, fontFamily: "monospace", color: "#93c5fd", cursor: "pointer" }} onClick={() => { navigator.clipboard.writeText(APP + "/deals/" + t.token); setMsg("Copied!"); }}>{APP}/deals/{t.token}</div>
-                        <div style={{ fontSize: 11, color: "#64748b" }}>Expires: {new Date(t.expires_at).toLocaleDateString()}</div>
+                        <div style={{ fontSize: 11, color: "#64748b" }}>
+                          {t.buyer_name && <span style={{ color: "#94a3b8" }}>{t.buyer_name} · </span>}
+                          {t.buyer_email && <span style={{ color: "#60a5fa" }}>{t.buyer_email} · </span>}
+                          Expires: {new Date(t.expires_at).toLocaleDateString()}
+                        </div>
                       </div>
                       <button onClick={() => { navigator.clipboard.writeText(APP + "/deals/" + t.token); setMsg("Copied!"); }} style={{ background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>Copy</button>
                     </div>
