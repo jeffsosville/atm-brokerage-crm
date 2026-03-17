@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../lib/auth";
+import DealRoomPanel from "../components/DealRoomPanel";
 
 const SB = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
 const SK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indncm14aHhvem95dmNtdmJmdXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzI5MTUsImV4cCI6MjA3NDQwODkxNX0.zuOIlNRTC3kjBWHxp9_sef2V9pe9erDSljEcJ2EL9to";
@@ -986,6 +987,7 @@ export default function CRM() {
               <button onClick={() => { setView("crm"); setSelected(null); }} style={tabStyle(view === "crm")}>Companies</button>
               <button onClick={() => window.location.href="/inbox"} style={tabStyle(false)}>Inbox</button>
               <button onClick={() => { setView("pipeline"); setSelected(null); }} style={tabStyle(view === "pipeline")}>Pipeline</button>
+              <button onClick={() => { setView("dealroom"); setSelected(null); }} style={tabStyle(view === "dealroom")}>🤖 Deal Room</button>
             </div>
           </div>
           {view === "crm" && <input type="text" placeholder="Search companies, cities, states..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: 320, background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: "10px 14px", borderRadius: 6, fontSize: 13, outline: "none" }} />}
@@ -1076,7 +1078,7 @@ export default function CRM() {
       </div>
 
       {/* Content */}
-      {view === "pipeline" ? <Pipeline /> : (
+      {view === "dealroom" ? <DealRoomPanel /> : view === "pipeline" ? <Pipeline /> : (
         <div style={{ overflowX: "auto", marginRight: selected ? 460 : 0, transition: "margin 0.2s" }}>
           {loading ? <div style={{ padding: 40, textAlign: "center", color: "#475569", fontSize: 14 }}>Loading...</div> : (<>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>

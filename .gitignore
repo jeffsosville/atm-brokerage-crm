@@ -3,3 +3,7 @@ node_modules/
 .env.local
 *.xlsx
 *.py
+credentials.json
+*.pickle
+gmail_sync_state.json
+gmail_draft_push.py
