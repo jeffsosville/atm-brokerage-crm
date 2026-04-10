@@ -157,7 +157,7 @@ export default function Admin() {
             {sel && (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: 16 }}>
-                  <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{sel.deal_name}</h3>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{sel.deal_name}</h3><button onClick={async () => { if (!confirm("Delete " + sel.deal_name + "?")) return; if (!confirm("Are you sure? This deletes ALL documents, tokens, and embeddings. Cannot be undone.")) return; await fetch("/api/admin/deal?dealId=" + sel.id, { method: "DELETE" }); setSel(null); loadDeals(); setMsg("Deal deleted."); }} style={{ marginLeft: 12, background: "#1e293b", color: "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Delete Deal</button>
                   <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{sel.dl_number} · {sel.route_cities || ""} {sel.route_state || ""} · {sel.atm_count || "?"} ATMs · ${sel.asking_price ? Number(sel.asking_price).toLocaleString() : "TBD"} · {sel.stage}</div>
                   <button onClick={checkStatus} style={{ marginTop: 8, background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Check Concierge Status</button>
                 </div>
