@@ -7,7 +7,7 @@ export async function POST(request) {
     const { dealId } = await request.json();
     if (!dealId) return Response.json({ error: "dealId required" }, { status: 400 });
     const token = crypto.randomBytes(16).toString("hex");
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
     const { error } = await supabase.from("deal_tokens").insert({ deal_id: dealId, listing_id: dealId, token, expires_at: expiresAt });
     if (error) return Response.json({ error: error.message }, { status: 500 });
     return Response.json({ success: true, token, expires_at: expiresAt });
