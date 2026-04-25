@@ -2,10 +2,10 @@
 
 > **Purpose:** How this system works in production, how to debug it when things break, and how to verify everything is healthy. This is the doc you read at 11pm when an email didn't send.
 
-**Last updated:** 2026-04-25
+**Last updated:** 2026-04-25 (verified webhook handler against `app/api/nda-webhook/route.js`)
 **Owner:** Jeff Sosville
 **Production URL:** https://atm-brokerage-crm.vercel.app
-**Repo:** [fill in GitHub URL]
+**Repo:** https://github.com/jeffsosville/atm-brokerage-crm
 
 ---
 
@@ -23,10 +23,11 @@
 
 **Key env vars** (set in Vercel → Project → Settings → Environment Variables):
 - `RESEND_API_KEY` — for outbound email
-- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — DB access
+- `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — DB access
+- `NEXT_PUBLIC_APP_URL` — base URL used in Deal Room links (defaults to `https://atm-brokerage-crm.vercel.app`)
 - `ANTHROPIC_API_KEY` — for John-voice email drafts
 - `GMAIL_OAUTH_*` — for Gmail sync
-- `NDA_WEBHOOK_SECRET` — for NDA form webhook verification *(verify exact name)*
+- `NDA_WEBHOOK_SECRET` — for NDA form webhook verification (sent as `Authorization: Bearer <secret>`)
 
 ---
 
@@ -35,13 +36,15 @@
 ```
 atmbrokerage.com (WordPress)
     │
-    │  NDA form submission
+    │  NDA form submission (POST + Bearer token)
     ▼
-[Webhook] ──► atm-brokerage-crm (Vercel)
+/api/nda-webhook ──► atm-brokerage-crm (Vercel)
                 │
-                ├──► Supabase: create deal_room_token
+                ├──► Supabase atm_deals: match deal by slug or single 'listed'
+                ├──► Supabase deal_tokens + deal_buyer_access: insert token (10yr TTL)
                 ├──► Resend: send Deal Room access email
-                └──► Admin panel notification
+                ├──► Supabase atm_activity_log: log 'nda_signed' event
+                └──► Supabase atm_notifications: notify John in admin panel
 
 Gmail (john@) ──► OAuth sync ──► Supabase (emails table)
                                     │
@@ -58,14 +61,20 @@ This is the flow that broke yesterday (2026-04-24). Capturing it here so it's th
 ### How it works (happy path)
 
 1. Buyer fills out NDA on **atmbrokerage.com** (the seller intake / NDA form embed)
-2. Form POSTs to webhook endpoint on the CRM: `POST /api/nda/submit` *(verify path)*
-3. CRM validates webhook signature using `NDA_WEBHOOK_SECRET`
-4. CRM writes to Supabase:
-   - Insert into `ndas` table (or equivalent — verify table name)
-   - Generate unique `deal_room_token` and insert into `tokens` table with expiry
-5. CRM calls Resend API to send the Deal Room email containing the tokenized link
-6. Buyer clicks link → lands on Deal Room with token validated against Supabase
-7. Admin panel shows new NDA submission
+2. Form POSTs JSON to webhook endpoint on the CRM: `POST /api/nda-webhook`
+   - Handler: `app/api/nda-webhook/route.js`
+   - Expected body fields: `buyer_name` (or `name` / `full_name`), `buyer_email` (or `email`), `phone`, `deal_slug` (or `page_url`)
+3. CRM validates `Authorization: Bearer <NDA_WEBHOOK_SECRET>` header (NOT an HMAC signature — it's a shared bearer token)
+4. CRM matches the deal against the `atm_deals` table by slug/name, falling back to the single deal in `stage = 'listed'` if there's only one
+5. CRM writes to Supabase:
+   - Generates a 48-char hex token (`crypto.randomBytes(24)`)
+   - Inserts into `deal_tokens` (this is what the Deal Hub reads to validate access)
+   - Inserts into `deal_buyer_access` (buyer name / email / phone tied to the token)
+   - Token `expires_at` is set to **10 years** from creation — effectively non-expiring
+6. CRM calls Resend API directly via `fetch` (no SDK) to send the Deal Room email containing the tokenized link `${APP_URL}/deals/${token}`
+7. CRM logs the event to `atm_activity_log` (`type = 'nda_signed'`) and creates a row in `atm_notifications` for John
+8. Buyer clicks link → lands on `/deals/[token]` with token validated against Supabase
+9. Admin panel shows new NDA submission via the notification
 
 ### How to verify it's working end-to-end
 
@@ -73,21 +82,23 @@ This is the flow that broke yesterday (2026-04-24). Capturing it here so it's th
 # 1. Submit a test NDA via the form on atmbrokerage.com (use a test email)
 # 2. Check Resend dashboard: https://resend.com/emails
 #    → confirm email was sent, check status (delivered / bounced / etc.)
-# 3. Check Supabase ndas + tokens tables for the new row
-# 4. Click the email link → confirm Deal Room loads
+# 3. Check Supabase deal_tokens + deal_buyer_access tables for the new row
+#    (and atm_activity_log for a 'nda_signed' entry)
+# 4. Click the email link → confirm Deal Room loads at /deals/<token>
 ```
 
 ### Common failure modes
 
 | Symptom | Likely cause | How to check | Fix |
 |---|---|---|---|
-| Email never sends | Resend API key invalid/rotated | Vercel env vars + Resend dashboard | Rotate key, update Vercel env, redeploy |
-| Email sends but link 404s | Token not written to Supabase | Supabase `tokens` table for recent rows | Check API route logs in Vercel |
-| Email lands in spam | SPF/DKIM/DMARC issue on sending domain | Use mail-tester.com on sending email | Verify DNS records at Name.com |
-| Webhook 401/403 | `NDA_WEBHOOK_SECRET` mismatch | Vercel function logs | Re-sync secret between WP form and CRM |
-| Webhook 500 | DB write failed (schema change, RLS) | Vercel logs + Supabase logs | Check recent migrations / RLS policies |
-| Form submits but nothing happens | Webhook not firing from WordPress | Browser network tab on form submit | Check WP form plugin settings, webhook URL |
-| Buyer gets email but token expired | Token TTL too short / clock skew | `tokens` table `expires_at` column | Adjust TTL in code |
+| Email never sends | Resend API key invalid/rotated, or `RESEND_KEY` falsy | Vercel env vars + Resend dashboard | Rotate key, update Vercel env, redeploy |
+| Email sends but link 404s | Token not written to `deal_tokens` | Supabase `deal_tokens` table for recent rows | Check `/api/nda-webhook` logs in Vercel |
+| Deal Room loads but shows wrong/no deal | Deal-matching fallback didn't find a unique listed deal | `atm_deals` rows with `stage = 'listed'` — must be exactly 1 if `deal_slug` doesn't match | Pass `deal_slug` from WP form, or adjust matching logic |
+| Email lands in spam | SPF/DKIM/DMARC issue on `atmbrokerage.com` (sender is `info@atmbrokerage.com`) | Use mail-tester.com on sending email | Verify DNS records at Name.com |
+| Webhook 401 | Bearer token mismatch — WP sending wrong/missing `Authorization: Bearer <secret>` header | Vercel function logs for `/api/nda-webhook` | Re-sync `NDA_WEBHOOK_SECRET` between WP form and Vercel env |
+| Webhook 400 (`buyer_email required`) | WP form not sending email field, or sending under unexpected key | Vercel logs + inspect WP form payload | Form should send `buyer_email`, `email`, or `full_name` |
+| Webhook 500 | DB write failed (schema change, RLS, missing table) | Vercel logs + Supabase logs | Check recent migrations / RLS policies on `deal_tokens`, `deal_buyer_access`, `atm_activity_log`, `atm_notifications` |
+| Form submits but nothing happens | Webhook not firing from WordPress | Browser network tab on form submit | Check WP form plugin settings, webhook URL is `/api/nda-webhook` |
 
 ### Yesterday's incident (2026-04-24)
 
@@ -102,9 +113,9 @@ This is the flow that broke yesterday (2026-04-24). Capturing it here so it's th
 ### Where to look first when this breaks
 
 1. **Resend dashboard** — did the email even attempt to send? If not, problem is upstream.
-2. **Vercel function logs** — filter to `/api/nda/*` routes for the time window
-3. **Supabase logs + `ndas` / `tokens` tables** — was the row written?
-4. **WordPress form settings** — is the webhook URL still correct? Did someone update the form?
+2. **Vercel function logs** — filter to `/api/nda-webhook` for the time window
+3. **Supabase logs + `deal_tokens` / `deal_buyer_access` / `atm_activity_log` tables** — was the row written?
+4. **WordPress form settings** — is the webhook URL still `/api/nda-webhook`? Is the `Authorization: Bearer <secret>` header still set? Did someone update the form?
 
 ---
 
