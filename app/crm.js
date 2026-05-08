@@ -776,7 +776,7 @@ export default function CRM() {
 
   useEffect(() => {
     api("crm_stats?select=*").then(d => { if (d && d[0]) { const s = d[0]; setStats({ total: s.total_active, withEmail: s.with_email, withPhone: s.with_phone, withAtmCount: s.with_atm_count, confirmed: s.confirmed_atm, operators: s.operators }); } }).catch(e => console.error(e));
-    api("atm_notifications?dismissed_at=is.null&order=priority.asc,created_at.desc&limit=50").then(async (notifs) => {
+    api("atm_notifications?dismissed_at=is.null&type=eq.escalation&order=priority.asc,created_at.desc&limit=50").then(async (notifs) => {
       if (!notifs || notifs.length === 0) { setNotifications([]); return; }
       // Fetch company names for each notification
       const cids = [...new Set(notifs.filter(n => n.company_id).map(n => n.company_id))];
