@@ -7,3 +7,5 @@ credentials.json
 *.pickle
 gmail_sync_state.json
 gmail_draft_push.py
+nda_buyers.csv
+sync.log
