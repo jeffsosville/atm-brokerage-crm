@@ -83,8 +83,38 @@ RULES:
     });
 
     const answer = response.content[0]?.text || "I'm having trouble responding. Please try again.";
+
+    // ─── Escalation logic: check the BUYER'S question, not the AI's answer ───
+    // Old logic flagged any answer containing "advisor" or "speak with",
+    // which incorrectly escalated good answers. New logic escalates when:
+    //   1. The buyer explicitly asks for a human, OR
+    //   2. The AI legitimately couldn't answer
+    const lowerQ = question.toLowerCase();
     const lowerAnswer = answer.toLowerCase();
-    const escalated = lowerAnswer.includes("speak with") || lowerAnswer.includes("connect you with") || lowerAnswer.includes("advisor") || lowerAnswer.includes("don't have that information");
+
+    const buyerWantsHuman =
+      lowerQ.includes("speak with") ||
+      lowerQ.includes("speak to") ||
+      lowerQ.includes("talk to") ||
+      lowerQ.includes("call me") ||
+      lowerQ.includes("phone call") ||
+      lowerQ.includes("phone number") ||
+      lowerQ.includes("agent number") ||
+      lowerQ.includes("advisor") ||
+      lowerQ.includes("advosor") ||         // common typo
+      lowerQ.includes("move quickly") ||
+      lowerQ.includes("make an offer") ||
+      lowerQ.includes("ready to buy") ||
+      lowerQ.includes("contact info");
+
+    const aiCantAnswer =
+      lowerAnswer.includes("don't have that information") ||
+      lowerAnswer.includes("don't have access") ||
+      lowerAnswer.includes("not available in the deal documents") ||
+      lowerAnswer.includes("not available in our") ||
+      lowerAnswer.includes("information isn't included");
+
+    const escalated = buyerWantsHuman || aiCantAnswer;
     const confidence = escalated ? 0.5 : 0.85;
 
     // Save question with full buyer identity
