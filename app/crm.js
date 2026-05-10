@@ -988,6 +988,7 @@ export default function CRM() {
               <button onClick={() => window.location.href="/inbox"} style={tabStyle(false)}>Inbox</button>
               <button onClick={() => { setView("pipeline"); setSelected(null); }} style={tabStyle(view === "pipeline")}>Pipeline</button>
               <button onClick={() => { setView("dealroom"); setSelected(null); }} style={tabStyle(view === "dealroom")}>🤖 Deal Room</button>
+              <button onClick={() => window.location.href="/todos"} style={tabStyle(false)}>✅ Tasks</button>
             </div>
           </div>
           {view === "crm" && <input type="text" placeholder="Search companies, cities, states..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: 320, background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: "10px 14px", borderRadius: 6, fontSize: 13, outline: "none" }} />}
