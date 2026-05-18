@@ -47,6 +47,18 @@ export default function DealHub() {
         const t = tokens[0];
         if (new Date(t.expires_at) < new Date()) { setValid(false); setError("This link has expired."); return; }
 
+        // ───── VIEW TRACKER ─────────────────────────────────────────
+        // Fire-and-forget — does NOT block rendering.
+        // Server route runs with service-role key so it can write
+        // through RLS. Logs to atm_activity_log + atm_notifications
+        // on first view, bumps view_count on every view.
+        fetch("/api/deal-hub-view", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, token_id: t.id }),
+        }).catch((err) => console.error("View tracker failed:", err));
+        // ────────────────────────────────────────────────────────────
+
         const dealId = t.deal_id || t.listing_id;
         const deals = await api("atm_deals?id=eq." + dealId + "&select=*");
         if (deals.length) setDeal(deals[0]);
