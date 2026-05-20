@@ -13,6 +13,8 @@ export default function Admin() {
   const [sel, setSel] = useState(null);
   const [files, setFiles] = useState([]);
   const [tokens, setTokens] = useState([]);
+  const [responders, setResponders] = useState([]);
+  const [newResponder, setNewResponder] = useState({ name: "", email: "", role: "advisor" });
   const [loading, setLoading] = useState("");
   const [msg, setMsg] = useState("");
   const [tab, setTab] = useState("deals");
@@ -26,11 +28,13 @@ export default function Admin() {
   const loadDeals = async () => { setDeals(await api("atm_deals?select=*&order=created_at.desc") || []); };
   const loadFiles = async (id) => { setFiles(await api("listing_files?listing_id=eq." + id + "&is_active=eq.true&select=*&order=uploaded_at.desc") || []); };
   const loadTokens = async (id) => { setTokens(await api("deal_tokens?deal_id=eq." + id + "&select=*&order=created_at.desc") || []); };
+  const loadResponders = async (id) => { setResponders(await api("deal_responder_tokens?deal_id=eq." + id + "&select=*&order=created_at.asc") || []); };
+
   const pick = async (d) => {
     setSel(d);
     await loadFiles(d.id);
     await loadTokens(d.id);
-    // Load existing seller notes back into textarea
+    await loadResponders(d.id);
     const chunks = await api("deal_embeddings?deal_id=eq." + d.id + "&source_type=eq.seller_notes&select=content_chunk&order=chunk_index.asc");
     if (chunks?.length) setSellerNotes(chunks.map(c => c.content_chunk).join(" "));
     else setSellerNotes("");
@@ -98,8 +102,48 @@ export default function Admin() {
     setMsg("Concierge: " + (s || "EMPTY - needs ingestion!") + " | Total: " + (ch?.length || 0));
   };
 
+  const addResponder = async () => {
+    if (!newResponder.name.trim() || !newResponder.email.trim() || !sel) { setMsg("Name and email required"); return; }
+    setLoading("r");
+    const r = await api("deal_responder_tokens", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        deal_id: sel.id,
+        name: newResponder.name.trim(),
+        email: newResponder.email.trim(),
+        role: newResponder.role,
+        listing_slug: sel.slug || null,
+      }),
+    });
+    if (r?.length) {
+      setMsg("Added " + newResponder.name + " — they will be emailed on every escalation.");
+      setNewResponder({ name: "", email: "", role: "advisor" });
+      loadResponders(sel.id);
+    } else {
+      setMsg("Error adding responder — check Supabase RLS or column names.");
+    }
+    setLoading("");
+  };
+
+  const removeResponder = async (id, name) => {
+    if (!confirm("Remove " + name + " from Q&A notifications?")) return;
+    await api("deal_responder_tokens?id=eq." + id, { method: "DELETE" });
+    loadResponders(sel.id);
+    setMsg(name + " removed.");
+  };
+
+  const copyAnswerLink = (responderToken) => {
+    navigator.clipboard.writeText(APP + "/answer/" + responderToken).catch(() => {});
+    setMsg("Answer link copied!");
+  };
+
   const I = { background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 6, padding: "8px 12px", color: "#e2e8f0", fontSize: 13, width: "100%" };
   const B = { background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer" };
+  const ROLE_COLORS = {
+    advisor: { bg: "#1e3a5f", color: "#60a5fa" },
+    seller: { bg: "#14532d", color: "#4ade80" },
+  };
 
   if (!authed) return (
     <div style={{ minHeight: "100vh", background: "#0a0f1a", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui" }}>
@@ -186,19 +230,11 @@ export default function Admin() {
                   </div>
                 </div>
 
-                {/* Seller Notes */}
                 <div style={{ background: "#111827", border: "1px solid #14532d", borderRadius: 10, padding: 16 }}>
                   <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>✍️ Seller Notes</h3>
                   <p style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>Add color from the seller — why they're selling, what makes this route special, ideal buyer, transition notes. The concierge will use this to answer buyer questions.</p>
-                  <textarea
-                    value={sellerNotes}
-                    onChange={e => setSellerNotes(e.target.value)}
-                    placeholder={"Examples:\n• Why selling: Owner retiring after 12 years, not health-related.\n• What makes it special: All locations are anchor tenants — Walmart, Tops, Price Rite. Very sticky.\n• Transition: Seller will train for 90 days, introduce to all location managers personally.\n• Ideal buyer: Someone who wants passive income. A manager handles all service calls.\n• Financing: Seller open to 10% seller financing for qualified buyer."}
-                    style={{ ...I, minHeight: 180, resize: "vertical", lineHeight: 1.6 }}
-                  />
-                  <button onClick={ingestSellerNotes} disabled={loading === "s"} style={{ ...B, marginTop: 8, background: "#16a34a" }}>
-                    {loading === "s" ? "Saving..." : "Save Seller Notes"}
-                  </button>
+                  <textarea value={sellerNotes} onChange={e => setSellerNotes(e.target.value)} placeholder={"Examples:\n• Why selling: Owner retiring after 12 years, not health-related.\n• What makes it special: All locations are anchor tenants — Walmart, Tops, Price Rite. Very sticky.\n• Transition: Seller will train for 90 days, introduce to all location managers personally.\n• Ideal buyer: Someone who wants passive income. A manager handles all service calls.\n• Financing: Seller open to 10% seller financing for qualified buyer."} style={{ ...I, minHeight: 180, resize: "vertical", lineHeight: 1.6 }} />
+                  <button onClick={ingestSellerNotes} disabled={loading === "s"} style={{ ...B, marginTop: 8, background: "#16a34a" }}>{loading === "s" ? "Saving..." : "Save Seller Notes"}</button>
                 </div>
 
                 <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: 16 }}>
@@ -220,6 +256,63 @@ export default function Admin() {
                     </div>
                   ))}
                 </div>
+
+                {/* Q&A RESPONDERS */}
+                <div style={{ background: "#111827", border: "1px solid #4a1d96", borderRadius: 10, padding: 16 }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>💬 Q&A Responders</h3>
+                  <p style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
+                    Anyone listed here gets emailed when a buyer question escalates. They click a link to answer — no login needed. Seller answers are held for review before going public.
+                  </p>
+
+                  {responders.length === 0 ? (
+                    <p style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>No responders yet — add the seller and advisors below.</p>
+                  ) : (
+                    <div style={{ marginBottom: 12 }}>
+                      {responders.map(r => (
+                        <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #1e293b" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <span style={{ background: ROLE_COLORS[r.role]?.bg || "#1e293b", color: ROLE_COLORS[r.role]?.color || "#94a3b8", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 3, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                              {r.role}
+                            </span>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</div>
+                              <div style={{ fontSize: 11, color: "#64748b" }}>
+                                {r.email}
+                                {r.last_used_at && <span style={{ marginLeft: 8 }}>Last notified: {new Date(r.last_used_at).toLocaleDateString()}</span>}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => copyAnswerLink(r.token)} style={{ background: "#1e293b", color: "#a78bfa", border: "1px solid #4a1d96", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>Copy Link</button>
+                            <button onClick={() => removeResponder(r.id, r.name)} style={{ background: "#1e293b", color: "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>Remove</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "end" }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Name</label>
+                      <input value={newResponder.name} onChange={e => setNewResponder({ ...newResponder, name: e.target.value })} placeholder="John S. or Seller Name" style={I} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Email</label>
+                      <input value={newResponder.email} onChange={e => setNewResponder({ ...newResponder, email: e.target.value })} placeholder="email@example.com" type="email" style={I} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Role</label>
+                      <select value={newResponder.role} onChange={e => setNewResponder({ ...newResponder, role: e.target.value })} style={{ ...I, width: "auto" }}>
+                        <option value="advisor">Advisor</option>
+                        <option value="seller">Seller</option>
+                      </select>
+                    </div>
+                    <button onClick={addResponder} disabled={loading === "r" || !newResponder.name.trim() || !newResponder.email.trim()} style={{ ...B, background: "#7c3aed", whiteSpace: "nowrap" }}>
+                      {loading === "r" ? "Adding..." : "+ Add"}
+                    </button>
+                  </div>
+                </div>
+
               </div>
             )}
           </div>
