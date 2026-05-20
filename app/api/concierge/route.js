@@ -24,6 +24,22 @@ const supaPost = async (table, data) => {
   });
 };
 
+// Like supaPost but returns the inserted row (needed to get question id)
+const supaInsert = async (table, data) => {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(data),
+  });
+  const rows = await r.json();
+  return rows?.[0] || null;
+};
+
 export async function POST(request) {
   try {
     const { dealId, question, token, buyerName, buyerEmail, buyerPhone, history } = await request.json();
@@ -84,11 +100,6 @@ RULES:
 
     const answer = response.content[0]?.text || "I'm having trouble responding. Please try again.";
 
-    // ─── Escalation logic: check the BUYER'S question, not the AI's answer ───
-    // Old logic flagged any answer containing "advisor" or "speak with",
-    // which incorrectly escalated good answers. New logic escalates when:
-    //   1. The buyer explicitly asks for a human, OR
-    //   2. The AI legitimately couldn't answer
     const lowerQ = question.toLowerCase();
     const lowerAnswer = answer.toLowerCase();
 
@@ -101,7 +112,7 @@ RULES:
       lowerQ.includes("phone number") ||
       lowerQ.includes("agent number") ||
       lowerQ.includes("advisor") ||
-      lowerQ.includes("advosor") ||         // common typo
+      lowerQ.includes("advosor") ||
       lowerQ.includes("move quickly") ||
       lowerQ.includes("make an offer") ||
       lowerQ.includes("ready to buy") ||
@@ -117,8 +128,8 @@ RULES:
     const escalated = buyerWantsHuman || aiCantAnswer;
     const confidence = escalated ? 0.5 : 0.85;
 
-    // Save question with full buyer identity
-    await supaPost("deal_questions", {
+    // Save question — use supaInsert to get the row id back
+    const savedQuestion = await supaInsert("deal_questions", {
       deal_id: dealId,
       dl_number: deal?.dl_number,
       buyer_session: token || null,
@@ -131,8 +142,8 @@ RULES:
       escalated,
     });
 
-    // Notify John on escalation — with full buyer info
     if (escalated) {
+      // Existing CRM notification — unchanged
       await supaPost("atm_notifications", {
         type: "escalation",
         title: `Buyer needs help: ${buyerName || buyerEmail || "Unknown buyer"} → ${deal?.deal_name}`,
@@ -147,6 +158,21 @@ RULES:
         }),
         suggested_action: buyerEmail ? "Reply to " + buyerEmail : "Answer buyer question in Deal Hub",
       });
+
+      // NEW — fire answer emails to all responders (John, Sanny, seller)
+      if (savedQuestion?.id) {
+        fetch("/api/admin/qa-notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question_id: savedQuestion.id,
+            deal_id: dealId,
+            deal_name: deal?.deal_name,
+            question,
+            buyer_name: buyerName || null,
+          }),
+        }).catch((err) => console.error("[concierge] qa-notify fire failed:", err));
+      }
     }
 
     await supaPost("atm_activity_log", {
