@@ -62,7 +62,7 @@ export async function POST(request) {
       }
     }
     messages.push({ role: "user", content: question });
-
+fetch(`${process.env.DEAL_HUB_URL || "https://atm-brokerage-crm.vercel.app"}/api/admin/qa-notify`, {
     const buyerLine = buyerName || buyerEmail
       ? `\nBUYER: ${buyerName || "Unknown"}${buyerEmail ? " | " + buyerEmail : ""}${buyerPhone ? " | " + buyerPhone : ""}`
       : "";
