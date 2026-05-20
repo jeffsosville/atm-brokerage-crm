@@ -89,7 +89,7 @@ export default function DealHub() {
       // Get unique question ids
       const qIds = [...new Set(answers.map(a => a.question_id))];
       const questions = await api(
-        "deal_questions?id=in.(" + qIds.join(",") + ")&select=id,question,asked_at"
+        "deal_questions?id=in.(" + qIds.join(",") + ")&select=id,question"
       );
 
       // Group answers under questions
