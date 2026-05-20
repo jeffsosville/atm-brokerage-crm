@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+const DEAL_HUB_URL = process.env.DEAL_HUB_URL || "https://atm-brokerage-crm.vercel.app";
 
 const supaFetch = async (path) => {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -62,7 +63,7 @@ export async function POST(request) {
       }
     }
     messages.push({ role: "user", content: question });
-fetch(`${process.env.DEAL_HUB_URL || "https://atm-brokerage-crm.vercel.app"}/api/admin/qa-notify`, {
+
     const buyerLine = buyerName || buyerEmail
       ? `\nBUYER: ${buyerName || "Unknown"}${buyerEmail ? " | " + buyerEmail : ""}${buyerPhone ? " | " + buyerPhone : ""}`
       : "";
@@ -159,9 +160,9 @@ RULES:
         suggested_action: buyerEmail ? "Reply to " + buyerEmail : "Answer buyer question in Deal Hub",
       });
 
-      // NEW — fire answer emails to all responders (John, Sanny, seller)
+      // Fire answer emails to all responders (John, Sanny, seller)
       if (savedQuestion?.id) {
-        fetch("/api/admin/qa-notify", {
+        fetch(`${DEAL_HUB_URL}/api/admin/qa-notify`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
