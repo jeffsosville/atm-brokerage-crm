@@ -105,19 +105,18 @@ RULES:
     const lowerAnswer = answer.toLowerCase();
 
     const buyerWantsHuman =
-      lowerQ.includes("speak with") ||
-      lowerQ.includes("speak to") ||
-      lowerQ.includes("talk to") ||
-      lowerQ.includes("call me") ||
-      lowerQ.includes("phone call") ||
-      lowerQ.includes("phone number") ||
-      lowerQ.includes("agent number") ||
-      lowerQ.includes("advisor") ||
-      lowerQ.includes("advosor") ||
-      lowerQ.includes("move quickly") ||
-      lowerQ.includes("make an offer") ||
-      lowerQ.includes("ready to buy") ||
-      lowerQ.includes("contact info");
+  lowerQ.includes("speak with") ||
+  lowerQ.includes("speak to") ||
+  lowerQ.includes("talk to") ||
+  lowerQ.includes("call me") ||
+  lowerQ.includes("phone call") ||
+  lowerQ.includes("phone number") ||
+  lowerQ.includes("agent number") ||
+  lowerQ.includes("advi") ||        // catches advisor, advisior, adviser etc
+  lowerQ.includes("move quickly") ||
+  lowerQ.includes("make an offer") ||
+  lowerQ.includes("ready to buy") ||
+  lowerQ.includes("contact info");
 
     const aiCantAnswer =
       lowerAnswer.includes("don't have that information") ||
