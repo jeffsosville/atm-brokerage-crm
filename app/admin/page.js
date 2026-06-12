@@ -19,6 +19,8 @@ export default function Admin() {
   const [msg, setMsg] = useState("");
   const [tab, setTab] = useState("deals");
   const [nd, setNd] = useState({ deal_name: "", atm_count: "", asking_price: "", route_state: "", route_cities: "", stage: "prospect" });
+  const [editing, setEditing] = useState(false);
+  const [ed, setEd] = useState({ deal_name: "", atm_count: "", asking_price: "", route_state: "", route_cities: "", stage: "prospect" });
   const [cimText, setCimText] = useState("");
   const [sellerNotes, setSellerNotes] = useState("");
   const fRef = useRef(null);
@@ -48,6 +50,46 @@ export default function Admin() {
     setMsg("Created! DL#: " + (r[0]?.dl_number || "assigned"));
     setNd({ deal_name: "", atm_count: "", asking_price: "", route_state: "", route_cities: "", stage: "prospect" });
     loadDeals(); setLoading("");
+  };
+
+  const openEdit = () => {
+    if (!sel) return;
+    setEd({
+      deal_name: sel.deal_name || "",
+      atm_count: sel.atm_count ?? "",
+      asking_price: sel.asking_price ?? "",
+      route_state: sel.route_state || "",
+      route_cities: sel.route_cities || "",
+      stage: sel.stage || "prospect",
+    });
+    setEditing(true);
+  };
+
+  const saveEdit = async () => {
+    if (!sel) return;
+    if (!ed.deal_name.trim()) { setMsg("Deal name required"); return; }
+    setLoading("e");
+    const resp = await fetch("/api/admin/deal", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dealId: sel.id,
+        deal_name: ed.deal_name,
+        atm_count: ed.atm_count === "" ? null : parseInt(ed.atm_count),
+        asking_price: ed.asking_price === "" ? null : parseFloat(ed.asking_price),
+        route_state: ed.route_state || null,
+        route_cities: ed.route_cities || null,
+        stage: ed.stage,
+      }),
+    });
+    const r = await resp.json();
+    if (r.error) { setMsg("Error: " + r.error); setLoading(""); return; }
+    setMsg("Saved.");
+    setEditing(false);
+    setLoading("");
+    // refresh the selected deal + the list so the new values show everywhere
+    if (r[0]) setSel(r[0]);
+    loadDeals();
   };
 
   const upload = async (e) => {
@@ -201,8 +243,29 @@ export default function Admin() {
             {sel && (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: 16 }}>
-                  <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{sel.deal_name}</h3><button onClick={async () => { if (!confirm("Delete " + sel.deal_name + "?")) return; if (!confirm("Are you sure? This deletes ALL documents, tokens, and embeddings. Cannot be undone.")) return; await fetch("/api/admin/deal?dealId=" + sel.id, { method: "DELETE" }); setSel(null); loadDeals(); setMsg("Deal deleted."); }} style={{ marginLeft: 12, background: "#1e293b", color: "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Delete Deal</button>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, display: "inline" }}>{sel.deal_name}</h3>
+                  <button onClick={openEdit} style={{ marginLeft: 12, background: "#1e293b", color: "#60a5fa", border: "1px solid #2563eb", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Edit</button>
+                  <button onClick={async () => { if (!confirm("Delete " + sel.deal_name + "?")) return; if (!confirm("Are you sure? This deletes ALL documents, tokens, and embeddings. Cannot be undone.")) return; await fetch("/api/admin/deal?dealId=" + sel.id, { method: "DELETE" }); setSel(null); loadDeals(); setMsg("Deal deleted."); }} style={{ marginLeft: 8, background: "#1e293b", color: "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Delete Deal</button>
                   <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{sel.dl_number} · {sel.route_cities || ""} {sel.route_state || ""} · {sel.atm_count || "?"} ATMs · ${sel.asking_price ? Number(sel.asking_price).toLocaleString() : "TBD"} · {sel.stage}</div>
+
+                  {editing && (
+                    <div style={{ marginTop: 16, padding: 16, background: "#0a0f1a", border: "1px solid #2563eb", borderRadius: 8 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: "#93c5fd" }}>Edit Deal</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                        <div style={{ gridColumn: "1/-1" }}><label style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase" }}>Deal Name *</label><input value={ed.deal_name} onChange={e => setEd({ ...ed, deal_name: e.target.value })} style={I} /></div>
+                        <div><label style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase" }}>ATM Count</label><input type="number" value={ed.atm_count} onChange={e => setEd({ ...ed, atm_count: e.target.value })} style={I} /></div>
+                        <div><label style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase" }}>Asking Price ($)</label><input type="number" value={ed.asking_price} onChange={e => setEd({ ...ed, asking_price: e.target.value })} style={I} /></div>
+                        <div><label style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase" }}>State</label><input value={ed.route_state} onChange={e => setEd({ ...ed, route_state: e.target.value })} style={I} /></div>
+                        <div><label style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase" }}>City</label><input value={ed.route_cities} onChange={e => setEd({ ...ed, route_cities: e.target.value })} style={I} /></div>
+                        <div><label style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase" }}>Stage</label><select value={ed.stage} onChange={e => setEd({ ...ed, stage: e.target.value })} style={I}><option value="prospect">Prospect</option><option value="listed">Listed</option><option value="under_contract">Under Contract</option><option value="closed">Closed</option></select></div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                        <button onClick={saveEdit} disabled={loading === "e"} style={B}>{loading === "e" ? "Saving..." : "Save Changes"}</button>
+                        <button onClick={() => setEditing(false)} style={{ ...B, background: "#1e293b" }}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+
                   <button onClick={checkStatus} style={{ marginTop: 8, background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", marginRight: 8 }}>Check Concierge Status</button>
                   <button onClick={async () => { if (!sel || !confirm("Auto-ingest all files for " + sel.deal_name + "?\n\nThis uses AI to read all PDF/DOCX/XLSX files and replace existing CIM/financial/Q&A chunks. FAQ and seller notes are preserved. Takes 30-90 seconds.")) return; setLoading("ai"); setMsg("Reading files with AI..."); try { const r = await fetch("/api/admin/auto-ingest", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ dealId: sel.id }) }); const d = await r.json(); if (d.error) { setMsg("Error: " + d.error); } else if (d.filesProcessed === 0) { setMsg(d.message || "No files processed"); } else { setMsg("\u2713 " + d.filesProcessed + " files \u2192 " + d.chunksCreated + " chunks (" + (d.sourceTypesReplaced || []).join(", ") + "). Skipped " + (d.filesSkippedTemplates || 0) + " templates."); } } catch (err) { setMsg("Error: " + err.message); } setLoading(""); }} disabled={loading === "ai"} style={{ marginTop: 8, background: "#7c3aed", color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>{loading === "ai" ? "\ud83e\udde0 Processing..." : "\ud83e\udde0 Auto-Ingest All Files"}</button>
                 </div>
