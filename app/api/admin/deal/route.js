@@ -20,6 +20,32 @@ export async function POST(request) {
   } catch (err) { return Response.json({ error: err.message }, { status: 500 }); }
 }
 
+export async function PATCH(request) {
+  try {
+    const body = await request.json();
+    const { dealId, ...fields } = body;
+    if (!dealId) return Response.json({ error: "dealId required" }, { status: 400 });
+
+    // Only allow these fields to be updated
+    const allowed = ["deal_name", "atm_count", "asking_price", "route_state", "route_cities", "stage"];
+    const updates = {};
+    for (const key of allowed) {
+      if (key in fields) updates[key] = fields[key] === "" ? null : fields[key];
+    }
+    if (Object.keys(updates).length === 0) {
+      return Response.json({ error: "No editable fields provided" }, { status: 400 });
+    }
+
+    const { data, error } = await supabase
+      .from("atm_deals")
+      .update(updates)
+      .eq("id", dealId)
+      .select();
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+    return Response.json(data);
+  } catch (err) { return Response.json({ error: err.message }, { status: 500 }); }
+}
+
 export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
