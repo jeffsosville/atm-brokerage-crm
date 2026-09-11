@@ -68,7 +68,7 @@ export default function DealHub() {
           const buyerInfo = { name: t.buyer_name || "", email: t.buyer_email || "", phone: t.buyer_phone || "" };
           setBuyer(buyerInfo);
           setGateComplete(true);
-          setMessages([{ role: "assistant", content: "Hi" + (t.buyer_name ? " " + t.buyer_name.split(" ")[0] : "") + "! I'm the Deal Concierge for " + (deals[0]?.deal_name || "this ATM route") + ". What would you like to know?" }]);
+          setMessages([{ role: "assistant", content: "Hi! I'm the Deal Concierge for " + (deals[0]?.deal_name || "this ATM route") + ". What would you like to know?" }]);
         }
 
         setValid(true);
@@ -130,7 +130,7 @@ export default function DealHub() {
       const buyerInfo = { name: gateInput.name.trim(), email: gateInput.email.trim(), phone: gateInput.phone.trim() };
       setBuyer(buyerInfo);
       setGateComplete(true);
-      setMessages([{ role: "assistant", content: "Hi" + (buyerInfo.name ? " " + buyerInfo.name.split(" ")[0] : "") + "! I'm the Deal Concierge for " + (deal?.deal_name || "this ATM route") + (deal?.dl_number ? " (" + deal.dl_number + ")" : "") + ". I can answer questions about the financials, equipment, operations, and help you understand if this route is right for you. What would you like to know?" }]);
+      setMessages([{ role: "assistant", content: "Hi! I'm the Deal Concierge for " + (deal?.deal_name || "this ATM route") + (deal?.dl_number ? " (" + deal.dl_number + ")" : "") + ". I can answer questions about the financials, equipment, operations, and help you understand if this route is right for you. What would you like to know?" }]);
     } catch (e) {
       setGateError("Something went wrong. Please try again.");
     }
@@ -336,7 +336,7 @@ export default function DealHub() {
           <div style={{ background: "linear-gradient(135deg, #0f172a, #1e293b)", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>Deal Concierge</div>
-              <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>{deal?.dl_number || "ATM Brokerage"}{buyer.name ? " · " + buyer.name : ""}</div>
+              <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>{deal?.dl_number || "ATM Brokerage"}</div>
             </div>
             <button onClick={function() { setChatOpen(false); }} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 8, cursor: "pointer", fontSize: 18 }}>✕</button>
           </div>
