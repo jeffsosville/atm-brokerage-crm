@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../lib/auth";
+import { supabase as sbClient } from "../lib/supabase";
 import DealRoomPanel from "../components/DealRoomPanel";
 
 const SB = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
@@ -959,7 +960,8 @@ export default function CRM() {
 
       const history = chatMessages.slice(-6).map(m => ({ role: m.role, content: m.content }));
       history.push({ role: "user", content: "[CRM Data]\n" + ctx.join("\n") + "\n\n[Question]\n" + q });
-      const resp = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: "You are the ATM Brokerage CRM AI assistant helping John (the broker). You have access to email history, relationship summaries, contacts, deals, and listings. Be direct and specific - use company names, contact names, email counts, dates. Format concisely.", messages: history }) });
+      const { data: { session: chatSession } } = await sbClient.auth.getSession();
+      const resp = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + (chatSession?.access_token || "") }, body: JSON.stringify({ max_tokens: 1000, system: "You are the ATM Brokerage CRM AI assistant helping John (the broker). You have access to email history, relationship summaries, contacts, deals, and listings. Be direct and specific - use company names, contact names, email counts, dates. Format concisely.", messages: history }) });
       if (!resp.ok) throw new Error("API " + resp.status);
       const data = await resp.json();
       setChatMessages(p => [...p, { role: "assistant", content: data.content?.map(c => c.text || "").join("\n") || "No response." }]);

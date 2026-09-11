@@ -105,7 +105,7 @@ Draft a reply from John that:
 Keep it under 150 words. Do not use bullet points. Write in plain conversational email style.`;
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 400,
     messages: [{ role: 'user', content: prompt }],
   });
