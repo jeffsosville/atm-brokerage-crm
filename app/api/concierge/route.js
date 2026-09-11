@@ -64,10 +64,6 @@ export async function POST(request) {
     }
     messages.push({ role: "user", content: question });
 
-    const buyerLine = buyerName || buyerEmail
-      ? `\nBUYER: ${buyerName || "Unknown"}${buyerEmail ? " | " + buyerEmail : ""}${buyerPhone ? " | " + buyerPhone : ""}`
-      : "";
-
     const systemPrompt = `You are the Deal Concierge for ATM Brokerage. You help prospective buyers understand ATM route listings and answer their questions.
 
 DEAL INFORMATION:
@@ -75,7 +71,7 @@ ${deal ? `Name: ${deal.deal_name || "ATM Route Listing"}
 DL#: ${deal.dl_number || "N/A"}
 Asking Price: $${deal.asking_price ? Number(deal.asking_price).toLocaleString() : "Contact for pricing"}
 ATM Count: ${deal.atm_count || "N/A"}
-Location: ${deal.route_cities || ""} ${deal.route_state || ""}` : "Deal information unavailable."}${buyerLine}
+Location: ${deal.route_cities || ""} ${deal.route_state || ""}` : "Deal information unavailable."}
 
 DEAL DOCUMENTS AND DATA:
 ${context}
@@ -89,7 +85,9 @@ RULES:
 6. Use specific numbers from the data when discussing financials.
 7. Naturally qualify the buyer by asking about budget, timeline, experience when relevant.
 8. If the buyer seems serious, suggest they reach out directly: Phone: +1 888-430-5535 or Email: info@atmbrokerage.com
-9. Keep answers concise but thorough.`;
+9. Keep answers concise but thorough.
+10. Do not address the buyer by name.
+11. Write plain text only — no markdown (no **bold**, no # headings). Simple hyphen lists are fine.`;
 
     const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
     const response = await anthropic.messages.create({
