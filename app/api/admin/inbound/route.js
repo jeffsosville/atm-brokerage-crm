@@ -2,9 +2,10 @@ import { adminDb as db, getUser, unauthorized } from "../../../../lib/serverAuth
 
 export const dynamic = "force-dynamic";
 const OPEN = ["new", "drafted", "awaiting_john"];
-const STATUSES = ["new", "drafted", "awaiting_john", "replied", "closed", "not_a_lead"];
+const STATUSES = ["new", "drafted", "awaiting_john", "awaiting_nda", "replied", "closed", "not_a_lead"];
+const CHASE = [...OPEN, "awaiting_nda"]; // things someone may need to act on
 
-// GET /api/admin/inbound?view=open|overdue|done|filtered
+// GET /api/admin/inbound?view=open|overdue|nda|done|filtered
 export async function GET(request) {
   if (!(await getUser(request))) return unauthorized();
   const view = new URL(request.url).searchParams.get("view") || "open";
@@ -12,7 +13,8 @@ export async function GET(request) {
 
   let q = db.from("inbound_items").select("*").limit(300);
   if (view === "open") q = q.in("status", OPEN).order("due_at", { ascending: true, nullsFirst: false });
-  else if (view === "overdue") q = q.in("status", OPEN).lt("due_at", nowIso).order("due_at", { ascending: true });
+  else if (view === "overdue") q = q.in("status", CHASE).lt("due_at", nowIso).order("due_at", { ascending: true });
+  else if (view === "nda") q = q.eq("status", "awaiting_nda").order("auto_replied_at", { ascending: false });
   else if (view === "done") q = q.in("status", ["replied", "not_a_lead"]).order("updated_at", { ascending: false });
   else q = q.eq("status", "closed").order("received_at", { ascending: false });
   const { data: items, error } = await q;
@@ -22,15 +24,16 @@ export async function GET(request) {
   const { data: routes } = routeIds.length ? await db.from("atm_routes").select("id, slug, title").in("id", routeIds) : { data: [] };
   const rmap = Object.fromEntries((routes || []).map((r) => [r.id, r]));
 
-  const [{ count: openN }, { count: overdueN }, { count: highN }] = await Promise.all([
+  const [{ count: openN }, { count: overdueN }, { count: highN }, { count: ndaN }] = await Promise.all([
     db.from("inbound_items").select("id", { count: "exact", head: true }).in("status", OPEN),
-    db.from("inbound_items").select("id", { count: "exact", head: true }).in("status", OPEN).lt("due_at", nowIso),
+    db.from("inbound_items").select("id", { count: "exact", head: true }).in("status", CHASE).lt("due_at", nowIso),
     db.from("inbound_items").select("id", { count: "exact", head: true }).in("status", OPEN).eq("priority", "high"),
+    db.from("inbound_items").select("id", { count: "exact", head: true }).eq("status", "awaiting_nda"),
   ]);
 
   return Response.json({
     items: items.map((i) => ({ ...i, route: rmap[i.route_id] || null })),
-    counts: { open: openN || 0, overdue: overdueN || 0, high: highN || 0 },
+    counts: { open: openN || 0, overdue: overdueN || 0, high: highN || 0, nda: ndaN || 0 },
   });
 }
 

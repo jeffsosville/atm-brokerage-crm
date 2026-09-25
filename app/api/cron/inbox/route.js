@@ -28,7 +28,7 @@ async function inChunks(list, size, fn) {
 // Runs every 15 minutes (pg_cron → this URL). Safe to run repeatedly.
 async function run() {
   const now = new Date().toISOString();
-  const stats = { dd_asks_logged: 0, questions_mapped: 0, emails_seen: 0, classified: 0, prefiltered: 0, new_items: 0, merged: 0, reopened: 0, escalations_added: 0, marked_replied: 0, errors: [] };
+  const stats = { autoreplies_linked: 0, nda_conversions: 0, dd_asks_logged: 0, questions_mapped: 0, emails_seen: 0, classified: 0, prefiltered: 0, new_items: 0, merged: 0, reopened: 0, escalations_added: 0, marked_replied: 0, errors: [] };
 
   // Listings, for matching emails to a route
   const { data: routeRows } = await db.from("atm_routes").select("id, slug, title, deal_id, status").in("status", ["active", "pending"]);
@@ -89,8 +89,10 @@ async function run() {
     const actionable = !NON_ACTIONABLE.includes(c.kind);
     const priority = nda && actionable ? "high" : c.priority || "normal";
 
-    const { data: existing } = e.thread_id
-      ? await db.from("inbound_items").select("id, status, kind, last_message_at").eq("thread_id", e.thread_id).in("source", ["email", "marketplace"]).maybeSingle()
+    // BizBuySell groups different buyers' leads for the same listing into one Gmail
+    // thread, so marketplace leads are one row per email, never merged by thread.
+    const { data: existing } = e.thread_id && source === "email"
+      ? await db.from("inbound_items").select("id, status, kind, last_message_at").eq("thread_id", e.thread_id).eq("source", "email").maybeSingle()
       : { data: null };
 
     if (existing) {
@@ -159,6 +161,53 @@ async function run() {
         stats.questions_mapped++;
       } catch (err) { stats.errors.push(`map ${q.id}: ${err.message}`); }
     });
+  }
+
+  // ---- 2c. BizBuySell leads: the Apps Script autoresponder --------------------
+  // A Google Apps Script on info@ ("BizBuySell Auto Reply", every 15 min) emails each
+  // BizBuySell lead "NDA & Deal Room Access – ATM Listings" with the listings/NDA link.
+  // It sends a NEW thread to the buyer, so we pair it to the lead by time, record the
+  // buyer's real email, and wait for their NDA instead of asking John to reply.
+  const { data: mkt } = await db.from("inbound_items").select("id, received_at")
+    .eq("source", "marketplace").eq("status", "new").is("auto_replied_at", null).order("received_at");
+  if (mkt?.length) {
+    const from = new Date(new Date(mkt[0].received_at).getTime() - 60e3).toISOString();
+    const { data: sentAuto } = await db.from("atm_activity_log").select("id, to_email, created_at")
+      .eq("type", "email_sent").ilike("subject", "NDA & Deal Room Access%").gte("created_at", from).order("created_at");
+    const { data: taken } = await db.from("inbound_items").select("lead_email, auto_replied_at").not("auto_replied_at", "is", null).gte("auto_replied_at", from);
+    const used = new Set((taken || []).map((t) => t.auto_replied_at && new Date(t.auto_replied_at).toISOString()));
+    for (const m of mkt) {
+      const t0 = new Date(m.received_at).getTime();
+      const hit = (sentAuto || []).find((x) => {
+        const t = new Date(x.created_at).getTime();
+        return !used.has(new Date(x.created_at).toISOString()) && t >= t0 - 60e3 && t <= t0 + 45 * 60e3;
+      });
+      if (!hit) continue;
+      used.add(new Date(hit.created_at).toISOString());
+      const lead = (hit.to_email || "").split(",")[0].trim().toLowerCase() || null;
+      await db.from("inbound_items").update({
+        status: "awaiting_nda", lead_email: lead, auto_replied_at: hit.created_at, first_response_at: hit.created_at,
+        due_at: dueAtFor("nda_followup", hit.created_at), updated_at: now, updated_by: "auto: bizbuysell autoresponder",
+        suggested_action: "NDA link sent automatically. If they haven't signed by the due time, follow up personally.",
+      }).eq("id", m.id);
+      stats.autoreplies_linked++;
+    }
+  }
+  // Leads who signed an NDA → converted
+  const { data: waitingNda } = await db.from("inbound_items").select("id, lead_email").eq("status", "awaiting_nda").not("lead_email", "is", null);
+  if (waitingNda?.length) {
+    const emails = [...new Set(waitingNda.map((w) => w.lead_email))];
+    const { data: signed } = await db.from("deal_buyer_access").select("buyer_email, created_at, deal_id").in("buyer_email", emails);
+    const signedBy = {}; (signed || []).forEach((sg) => { signedBy[(sg.buyer_email || "").toLowerCase()] = sg; });
+    for (const w of waitingNda) {
+      const sg = signedBy[w.lead_email];
+      if (!sg) continue;
+      await db.from("inbound_items").update({
+        status: "replied", nda_signed_at: sg.created_at, is_nda_signer: true, closed_reason: "converted: signed NDA",
+        deal_id: sg.deal_id, updated_at: now, updated_by: "auto: NDA signed",
+      }).eq("id", w.id);
+      stats.nda_conversions++;
+    }
   }
 
   // ---- 3. Reply detection ----------------------------------------------------

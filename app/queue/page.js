@@ -46,7 +46,7 @@ export default function Queue() {
   if (!user) return <LoginPage />;
 
   const counts = d?.counts || {};
-  const tabs = [["open", `Needs reply (${counts.open ?? "…"})`], ["overdue", `Overdue (${counts.overdue ?? "…"})`], ["done", "Replied / not a lead"], ["filtered", "Auto-filtered"]];
+  const tabs = [["open", `Needs reply (${counts.open ?? "…"})`], ["overdue", `Overdue (${counts.overdue ?? "…"})`], ["nda", `Awaiting NDA (${counts.nda ?? "…"})`], ["done", "Replied / converted"], ["filtered", "Auto-filtered"]];
 
   return (
     <div style={page}>
@@ -65,7 +65,7 @@ export default function Queue() {
         {d && !d.items.length && <div style={{ color: C.faint }}>Nothing here.</div>}
         {d && d.items.map((i) => {
           const [kl, kc] = KIND[i.kind] || KIND.other;
-          const due = ["new", "drafted", "awaiting_john"].includes(i.status) ? dueLabel(i.due_at) : null;
+          const due = ["new", "drafted", "awaiting_john", "awaiting_nda"].includes(i.status) ? dueLabel(i.due_at) : null;
           const g = gmailLink(i);
           return (
             <div key={i.id} style={{ background: C.card, border: "1px solid " + (i.priority === "high" ? "#7f1d1d" : C.line), borderRadius: 8, padding: "12px 16px", marginBottom: 8 }}>
@@ -78,7 +78,14 @@ export default function Queue() {
                 {due && <span style={{ color: due.c, fontWeight: 700 }}>{due.t}</span>}
                 {i.route && <a href={"/dd/" + i.route.slug} style={{ color: C.blue, textDecoration: "none" }}>{i.route.title}</a>}
               </div>
-              <div style={{ marginTop: 6, fontWeight: 700 }}>{i.from_name ? i.from_name + " · " : ""}<span style={{ color: C.dim, fontWeight: 400 }}>{i.from_email}</span></div>
+              <div style={{ marginTop: 6, fontWeight: 700 }}>{i.from_name ? i.from_name + " · " : ""}<span style={{ color: C.dim, fontWeight: 400 }}>{i.lead_email || i.from_email}</span></div>
+              {i.auto_replied_at && (
+                <div style={{ marginTop: 4, fontSize: 12, color: i.nda_signed_at ? "#4ade80" : "#c084fc" }}>
+                  {i.nda_signed_at
+                    ? "Signed the NDA " + new Date(i.nda_signed_at).toLocaleDateString() + " (auto-reply worked)"
+                    : "Auto-reply sent " + new Date(i.auto_replied_at).toLocaleString() + " with the NDA link; waiting for them to sign"}
+                </div>
+              )}
               <div style={{ marginTop: 4, fontSize: 13 }}>{i.summary || i.subject}</div>
               {i.snippet && <div style={{ marginTop: 4, fontSize: 12, color: C.faint, maxHeight: 36, overflow: "hidden" }}>{i.snippet}</div>}
               {i.suggested_action && <div style={{ marginTop: 4, fontSize: 12, color: "#93c5fd" }}>→ {i.suggested_action}</div>}
@@ -86,7 +93,8 @@ export default function Queue() {
               <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                 {g && <a href={g} target="_blank" rel="noreferrer" style={{ ...btn(true), textDecoration: "none" }}>Open in Gmail</a>}
                 {i.source === "deal_room" && i.route && <a href={"/dd/" + i.route.slug} style={{ ...btn(false), textDecoration: "none" }}>Route DD</a>}
-                {["new", "drafted", "awaiting_john"].includes(i.status) ? (
+                {i.lead_email && i.status === "awaiting_nda" && <a href={"mailto:" + i.lead_email} style={{ ...btn(false), textDecoration: "none" }}>Email {i.lead_email}</a>}
+                {["new", "drafted", "awaiting_john", "awaiting_nda"].includes(i.status) ? (
                   <>
                     <button style={btn(false)} onClick={() => act(i.id, { status: "replied" })}>Mark replied</button>
                     <button style={btn(false)} onClick={() => { const r = prompt("Why is this not a lead?"); if (r !== null) act(i.id, { status: "not_a_lead", closed_reason: r || "not a lead" }); }}>Not a lead</button>
@@ -99,7 +107,7 @@ export default function Queue() {
           );
         })}
         <div style={{ fontSize: 11, color: C.faint, marginTop: 12 }}>
-          Checks for new mail every 15 minutes. An item is marked replied automatically when a reply shows up in the same Gmail thread. Reply targets: offers and seller leads 2 business hours, data-room issues 4, buyer questions same business day.
+          Checks for new mail every 15 minutes. An item is marked replied automatically when a reply shows up in the same Gmail thread. Reply targets: offers and seller leads 2 business hours, data-room issues 4, buyer questions same business day. BizBuySell leads get the automatic NDA email (Apps Script on info@), move to Awaiting NDA, and only need a personal follow-up if they have not signed within 3 business days.
         </div>
       </div>
     </div>

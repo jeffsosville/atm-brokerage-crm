@@ -50,11 +50,12 @@ export async function GET(request) {
   const nowIso = new Date().toISOString();
   const { data: waiting } = await supabase
     .from("inbound_items")
-    .select("kind, priority, from_name, from_email, summary, subject, due_at, last_message_at, source")
-    .in("status", ["new", "drafted", "awaiting_john"])
+    .select("kind, priority, status, from_name, from_email, lead_email, summary, subject, due_at, last_message_at, source")
+    .in("status", ["new", "drafted", "awaiting_john", "awaiting_nda"])
     .order("due_at", { ascending: true })
     .limit(200);
-  const inbound = waiting || [];
+  // BizBuySell leads that got the auto NDA email only count once overdue (they didn't sign)
+  const inbound = (waiting || []).filter(i => i.status !== "awaiting_nda" || (i.due_at && i.due_at < nowIso));
   const overdue = inbound.filter(i => i.due_at && i.due_at < nowIso);
   const KIND_LABEL = { offer: "Offer", seller_lead: "Seller lead", data_room: "Data room", buyer_question: "Buyer question", existing_deal: "Existing deal", marketplace_lead: "BizBuySell lead", other: "Other" };
 
@@ -99,7 +100,7 @@ export async function GET(request) {
       html += `
         <div style="background: white; border: 1px solid ${late ? "#fca5a5" : "#e2e8f0"}; border-radius: 6px; padding: 10px 12px; margin-bottom: 6px;">
           <div style="font-size: 11px; color: ${late ? "#b91c1c" : "#64748b"}; font-weight: 600;">${KIND_LABEL[i.kind] || i.kind}${i.priority === "high" ? " · HIGH" : ""}${late ? " · OVERDUE" : ""}</div>
-          <div style="font-size: 13px; color: #1e293b;"><b>${i.from_name || i.from_email || ""}</b> — ${(i.summary || i.subject || "").substring(0, 140)}</div>
+          <div style="font-size: 13px; color: #1e293b;"><b>${i.from_name || i.lead_email || i.from_email || ""}</b> — ${i.status === "awaiting_nda" ? "Got the auto NDA email but hasn't signed; follow up personally. " : ""}${(i.summary || i.subject || "").substring(0, 140)}</div>
         </div>`;
     });
     html += `</div>`;
