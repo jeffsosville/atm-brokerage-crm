@@ -46,7 +46,19 @@ export async function GET(request) {
   const escalatedQ = (escalated || []).length;
   const handledQ = totalQ - escalatedQ;
 
-  if (totalQ === 0 && uniqueSessions === 0) {
+  // Inbound queue: everything still waiting on a reply
+  const nowIso = new Date().toISOString();
+  const { data: waiting } = await supabase
+    .from("inbound_items")
+    .select("kind, priority, from_name, from_email, summary, subject, due_at, last_message_at, source")
+    .in("status", ["new", "drafted", "awaiting_john"])
+    .order("due_at", { ascending: true })
+    .limit(200);
+  const inbound = waiting || [];
+  const overdue = inbound.filter(i => i.due_at && i.due_at < nowIso);
+  const KIND_LABEL = { offer: "Offer", seller_lead: "Seller lead", data_room: "Data room", buyer_question: "Buyer question", existing_deal: "Existing deal", marketplace_lead: "BizBuySell lead", other: "Other" };
+
+  if (totalQ === 0 && uniqueSessions === 0 && inbound.length === 0) {
     return Response.json({ sent: false, reason: "no activity" });
   }
 
@@ -75,6 +87,23 @@ export async function GET(request) {
           </tr>
         </table>
       </div>`;
+
+  if (inbound.length > 0) {
+    const show = [...overdue.filter(i => i.priority === "high"), ...overdue.filter(i => i.priority !== "high"), ...inbound.filter(i => !overdue.includes(i))].slice(0, 15);
+    html += `
+      <div style="background: #fef2f2; padding: 20px; border: 1px solid #fecaca; border-top: none;">
+        <h2 style="margin: 0 0 6px; font-size: 16px; color: #991b1b;">Inbound waiting on a reply: ${inbound.length} (${overdue.length} overdue)</h2>
+        <p style="margin: 0 0 12px; font-size: 12px; color: #64748b;">Email, BizBuySell and deal-room inquiries. <a href="https://atm-brokerage-crm.vercel.app/queue" style="color:#2563eb;">Open the queue</a></p>`;
+    show.forEach(i => {
+      const late = i.due_at && i.due_at < nowIso;
+      html += `
+        <div style="background: white; border: 1px solid ${late ? "#fca5a5" : "#e2e8f0"}; border-radius: 6px; padding: 10px 12px; margin-bottom: 6px;">
+          <div style="font-size: 11px; color: ${late ? "#b91c1c" : "#64748b"}; font-weight: 600;">${KIND_LABEL[i.kind] || i.kind}${i.priority === "high" ? " · HIGH" : ""}${late ? " · OVERDUE" : ""}</div>
+          <div style="font-size: 13px; color: #1e293b;"><b>${i.from_name || i.from_email || ""}</b> — ${(i.summary || i.subject || "").substring(0, 140)}</div>
+        </div>`;
+    });
+    html += `</div>`;
+  }
 
   if (escalatedQ > 0) {
     html += `
@@ -114,7 +143,7 @@ export async function GET(request) {
     body: JSON.stringify({
       from: "ATM Brokerage <deals@atmbrokerage.com>",
       to: ["info@atmbrokerage.com", "john@atmbrokerage.com"],
-      subject: "Deal Hub Daily Report - " + escalatedQ + " escalated, " + totalQ + " total questions",
+      subject: "Daily Report - " + inbound.length + " inquiries waiting (" + overdue.length + " overdue), " + escalatedQ + " escalated deal-room questions",
       html,
     }),
   });
