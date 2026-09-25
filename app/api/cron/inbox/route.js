@@ -56,7 +56,7 @@ async function run() {
   stats.emails_seen = emails?.length || 0;
 
   let claudeBudget = MAX_CLAUDE_PER_RUN;
-  const todo = (emails || []).map((e) => ({ e, pre: preFilter(e.from_email) }))
+  const todo = (emails || []).map((e) => ({ e, pre: preFilter(e.from_email, e.subject) }))
     .filter(({ pre }) => pre.kind || claudeBudget-- > 0); // leave the rest for the next run
 
   const senders = [...new Set(todo.map(({ e }) => (e.from_email || "").toLowerCase()).filter(Boolean))];
@@ -70,7 +70,7 @@ async function run() {
   const decided = await inChunks(todo, 5, async ({ e, pre }) => {
     try {
       if (pre.kind) { stats.prefiltered++; return { e, c: { kind: pre.kind, priority: "low", summary: null }, source: pre.source }; }
-      const c = await classifyEmail(e, routes, { isMarketplace: pre.source === "marketplace", ddItems: ddItems || [] });
+      const c = await classifyEmail(e, routes, { isMarketplace: pre.source === "marketplace", isInternal: !!pre.internal, ddItems: ddItems || [] });
       stats.classified++;
       return { e, c, source: pre.source };
     } catch (err) {

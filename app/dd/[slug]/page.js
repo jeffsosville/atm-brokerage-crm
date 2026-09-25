@@ -95,6 +95,57 @@ function ItemRow({ it, selected, onSelect, onSave }) {
   );
 }
 
+
+const BST = {
+  verified: ["\u2713 Verified", "#15803d"], provided: ["Provided", "#1d4ed8"], partial: ["Partial", "#b45309"],
+  requested: ["Requested", "#7c3aed"], pending: ["Pending", "#9ca3af"], not_provided: ["Not provided", "#6b7280"],
+};
+
+// Exactly what buyers would see on the listing page (same data as the public endpoint).
+function BadgePreview({ slug, live }) {
+  const [d, setD] = useState(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => { authFetch("/api/admin/dd/" + slug + "?badge=1").then(setD).catch(() => {}); }, [slug]);
+  if (!d) return <div style={{ color: C.faint, fontSize: 12, padding: 16 }}>Loading preview...</div>;
+  const col = d.score >= 80 ? "#15803d" : d.score >= 50 ? "#b45309" : "#b91c1c";
+  const provided = d.counts.verified + d.counts.provided;
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: live ? "#4ade80" : "#facc15", marginBottom: 8 }}>
+        {live ? "LIVE — buyers can see this on the listing page" : "PREVIEW ONLY — not shown to buyers"}
+      </div>
+      <div style={{ background: "#fff", color: "#1f2937", borderRadius: 10, padding: "16px 18px", fontFamily: "Georgia, serif" }}>
+        <div style={{ fontSize: 12, letterSpacing: ".06em", textTransform: "uppercase", color: "#1f3864", fontWeight: 700 }}>Due diligence transparency</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+          <div style={{ fontSize: 30, fontWeight: 700, color: col, lineHeight: 1 }}>{d.score}%</div>
+          <div style={{ flex: 1, height: 9, background: "#eef1f5", borderRadius: 6, overflow: "hidden" }}><div style={{ width: d.score + "%", height: "100%", background: col }} /></div>
+        </div>
+        <div style={{ fontSize: 12, color: "#4b5563", marginTop: 8 }}>
+          {provided} of {d.total} checklist items provided by the seller · {d.counts.verified} verified by ATM Brokerage{d.counts.requested ? " · " + d.counts.requested + " requested" : ""}
+        </div>
+        <button onClick={() => setOpen(!open)} style={{ marginTop: 10, background: "none", border: "1px solid #c7ced9", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: "pointer", color: "#1f3864" }}>
+          {open ? "Hide the checklist" : "See the checklist"}
+        </button>
+        {open && d.sections.map((sec) => (
+          <div key={sec.name}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", margin: "12px 0 4px" }}>{sec.name}</div>
+            {sec.items.map((it) => {
+              const st = BST[it.status] || BST.pending;
+              return (
+                <div key={it.label} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, padding: "4px 0", borderBottom: "1px solid #f1f3f6" }}>
+                  <span>{it.label}{it.value && <div style={{ fontSize: 11, color: "#6b7280" }}>{it.value}</div>}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: st[1], whiteSpace: "nowrap" }}>{st[0]}</span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 10 }}>We check every listing against our due diligence checklist and show buyers exactly what has been provided. Financials, locations and contracts are shared after an NDA.</div>
+      </div>
+    </div>
+  );
+}
+
 export default function DDChecklist() {
   const { slug } = useParams();
   const { user, loading } = useAuth();
@@ -147,9 +198,9 @@ export default function DDChecklist() {
           <span>{route.nda_count || 0} NDAs</span>
           <span>{score?.n_verified || 0} verified · {(score?.to_verify_keys || []).length} to verify · {score?.n_gaps || 0} gaps</span>
           <a href={"https://atmbrokerage.com/atm-route-for-sale/" + route.slug + "/"} target="_blank" rel="noreferrer" style={{ color: C.blue }}>Listing ↗</a>
-          <label style={{ display: "inline-flex", gap: 6, alignItems: "center", cursor: "pointer" }} title="Show the public transparency badge on atmbrokerage.com">
-            <input type="checkbox" checked={route.dd_badge_enabled !== false} onChange={(e) => act({ action: "badge", enabled: e.target.checked })} />
-            Public badge
+          <label style={{ display: "inline-flex", gap: 6, alignItems: "center", cursor: "pointer" }} title="Off = preview only, below. On = buyers see it on atmbrokerage.com (once the snippet is on the page)">
+            <input type="checkbox" checked={route.dd_badge_enabled === true} onChange={(e) => { if (!e.target.checked || confirm("Show the transparency badge to buyers on this listing's atmbrokerage.com page?")) act({ action: "badge", enabled: e.target.checked }); }} />
+            Show badge on listing
           </label>
         </div>
         <div style={{ marginTop: 8, fontSize: 12 }}>
@@ -197,6 +248,11 @@ export default function DDChecklist() {
         </div>
 
         <div style={{ position: "sticky", top: 16 }}>
+          <div style={card}>
+            <h2 style={h2}>Buyer-facing badge</h2>
+            <BadgePreview key={String(score?.dd_score) + "-" + (score?.n_verified || 0)} slug={route.slug} live={route.dd_badge_enabled === true} />
+          </div>
+
           <div style={card}>
             <h2 style={h2}>Ask the seller</h2>
             <div style={{ padding: 16, display: "grid", gap: 10, fontSize: 13 }}>

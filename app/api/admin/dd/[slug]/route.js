@@ -1,4 +1,5 @@
 import { adminDb, getUser, unauthorized } from "../../../../../lib/serverAuth";
+import { buildPublicDD } from "../../../../../lib/ddPublic";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,9 @@ export async function GET(request, { params }) {
   const route = await loadRoute(params.slug);
   if (!route) return Response.json({ error: "Route not found" }, { status: 404 });
 
+  if (new URL(request.url).searchParams.get("badge")) {
+    return Response.json(await buildPublicDD(route.id, route.title));
+  }
   const [items, flags, touches, score] = await Promise.all([
     adminDb.from("v_route_dd_items").select("*").eq("route_id", route.id).order("sort_order"),
     adminDb.from("route_dd_flags").select("*").eq("route_id", route.id).order("created_at"),
