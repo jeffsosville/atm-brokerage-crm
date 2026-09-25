@@ -170,3 +170,31 @@ Append a one-paragraph entry here every time something non-obvious breaks. Date 
 - [ ] Add automated end-to-end test for NDA flow (submit test form daily, alert if email doesn't arrive)
 - [ ] Add Sentry or similar error monitoring to Vercel functions
 - [ ] Document exact Supabase table schemas in `ARCHITECTURE.md`
+
+---
+
+## Inbound queue (added Sept 2026)
+
+Every inquiry gets a row in `inbound_items`, an owner and a reply deadline.
+
+- **Trigger:** Supabase `pg_cron` job `inbox-every-15-min` POSTs to `/api/cron/inbox` with header `x-cron-secret` (= `CRON_SECRET`). Responses land in `net._http_response`.
+- **Input:** emails already synced into `atm_activity_log` by `gmail_sync.py` (cron on Jeff's Mac, every 30 min; info@ only). Plus unanswered deal-room escalations from `deal_questions`.
+- **Classifier:** `lib/inbox/classify.js`. Obvious automated senders are closed without an AI call. Mail from our own domains is still read (forwarded leads, Drift contacts) unless it's a system report.
+- **Deadlines:** `lib/inbox/sla.js`, in business hours (Mon–Fri 9–5 ET).
+- **Reply detection:** an `email_sent` in the same Gmail thread marks the item replied. Deal-room items clear when answered in the deal room.
+- **UI:** `/queue` ("📥 Inbound" tab). John's 9am digest lists waiting and overdue items.
+
+### BizBuySell auto-reply (Google Apps Script, not in this repo)
+
+- **Where:** script.google.com, signed in as info@atmbrokerage.com, project "BizBuySell Auto Reply", function `autoReplyBizBuySellLeads`, time trigger every 15 min.
+- **What:** searches `subject:"Your Business-for-sale listing" newer_than:1d`, pulls the buyer's email from the lead body, and sends a NEW email "NDA & Deal Room Access – ATM Listings" linking to https://atmbrokerage.com/atm-routes-for-sale/ (sign NDA → deal room). It de-dupes with message IDs in Script Properties.
+- **How the queue uses it:** the cron pairs each BizBuySell lead with the auto-reply sent within 45 min of it. It stores the buyer's address in `lead_email` and moves the lead to `awaiting_nda` (3 business days). When that email shows up in `deal_buyer_access`, the lead is marked converted. If it doesn't, the lead goes overdue and John follows up personally.
+- **Buyer replies** to the auto-reply ("Re: NDA & Deal Room Access") come into info@ as normal buyer questions.
+- **If it breaks:** check the trigger and the Executions tab in Apps Script. The queue will show BizBuySell leads stuck in "Needs reply" instead of "Awaiting NDA".
+
+## Due Diligence (added Sept 2026)
+
+- **Tables:** `dd_checklist_items` (per vertical, with a `visibility` of public / nda / internal), `route_dd_items`, `dd_touches`, `route_dd_flags`, `dd_seller_requests`. **Views:** `v_route_dd_items`, `v_route_dd_score`.
+- **UI:** `/dd` (queue) and `/dd/[slug]` (checklist, contradictions, seller email, badge preview).
+- **Buyer questions → DD:** the classifier tags DD item keys, and `dd_note_buyer_ask()` counts them. Routes with open items buyers ask about rank higher.
+- **Public badge:** `/api/public/dd/[DL-number or slug]` + `public/dd-badge.js`. It's off per listing (`atm_routes.dd_badge_enabled`) until switched on.
