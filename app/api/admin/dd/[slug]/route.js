@@ -9,7 +9,7 @@ const CHANNELS = ["email", "phone", "form_link", "other"];
 async function loadRoute(slug) {
   const { data } = await adminDb
     .from("atm_routes")
-    .select("id, slug, title, status, asking_price, terminal_count, location_display, deal_id, nda_count, inquiry_count, seller_contact_name, seller_contact_email, seller_contact_phone")
+    .select("id, slug, title, status, asking_price, terminal_count, location_display, deal_id, nda_count, inquiry_count, seller_contact_name, seller_contact_email, seller_contact_phone, dd_badge_enabled")
     .eq("slug", slug)
     .maybeSingle();
   return data;
@@ -100,6 +100,12 @@ export async function PATCH(request, { params }) {
         .eq("route_id", route.id).in("item_key", keys).is("first_asked_at", null);
     }
     return Response.json({ touch: data });
+  }
+
+  if (body.action === "badge") {
+    const { error } = await adminDb.from("atm_routes").update({ dd_badge_enabled: !!body.enabled }).eq("id", route.id);
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ ok: true });
   }
 
   if (body.action === "reply") {

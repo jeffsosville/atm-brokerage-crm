@@ -1,11 +1,13 @@
 import { adminDb as db } from "../../../../lib/serverAuth";
-import { preFilter, classifyEmail, NON_ACTIONABLE } from "../../../../lib/inbox/classify";
+import { preFilter, classifyEmail, mapQuestionToDD, NON_ACTIONABLE } from "../../../../lib/inbox/classify";
 import { dueAtFor } from "../../../../lib/inbox/sla";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MAX_CLAUDE_PER_RUN = Number(process.env.INBOX_MAX_CLASSIFY || 20);
+const MAX_MAP_PER_RUN = Number(process.env.INBOX_MAX_DDMAP || 15);
+const ASK_KINDS = ["buyer_question", "data_room", "offer", "existing_deal", "marketplace_lead"];
 const BACKFILL_DAYS = 30;
 const OPEN = ["new", "drafted", "awaiting_john"];
 
@@ -26,7 +28,7 @@ async function inChunks(list, size, fn) {
 // Runs every 15 minutes (pg_cron → this URL). Safe to run repeatedly.
 async function run() {
   const now = new Date().toISOString();
-  const stats = { emails_seen: 0, classified: 0, prefiltered: 0, new_items: 0, merged: 0, reopened: 0, escalations_added: 0, marked_replied: 0, errors: [] };
+  const stats = { dd_asks_logged: 0, questions_mapped: 0, emails_seen: 0, classified: 0, prefiltered: 0, new_items: 0, merged: 0, reopened: 0, escalations_added: 0, marked_replied: 0, errors: [] };
 
   // Listings, for matching emails to a route
   const { data: routeRows } = await db.from("atm_routes").select("id, slug, title, deal_id, status").in("status", ["active", "pending"]);
@@ -36,6 +38,13 @@ async function run() {
   const routes = (routeRows || []).map((r) => ({ ...r, dl_number: dl[r.deal_id] || null }));
   const bySlug = Object.fromEntries(routes.map((r) => [r.slug, r]));
   const byDeal = Object.fromEntries(routes.filter((r) => r.deal_id).map((r) => [r.deal_id, r]));
+  const { data: atmV } = await db.from("verticals").select("id").eq("slug", "atm").maybeSingle();
+  const { data: ddItems } = atmV ? await db.from("dd_checklist_items").select("item_key, label, seller_question").eq("vertical_id", atmV.id).neq("visibility", "internal").order("sort_order") : { data: [] };
+  const noteAsk = async (routeId, keys, at) => {
+    if (!routeId || !keys?.length) return;
+    const { error } = await db.rpc("dd_note_buyer_ask", { p_route: routeId, p_keys: keys, p_at: at });
+    if (error) stats.errors.push("dd ask: " + error.message); else stats.dd_asks_logged += keys.length;
+  };
 
   // ---- 1. New emails -------------------------------------------------------
   const since = new Date(Date.now() - BACKFILL_DAYS * 864e5).toISOString();
@@ -61,7 +70,7 @@ async function run() {
   const decided = await inChunks(todo, 5, async ({ e, pre }) => {
     try {
       if (pre.kind) { stats.prefiltered++; return { e, c: { kind: pre.kind, priority: "low", summary: null }, source: pre.source }; }
-      const c = await classifyEmail(e, routes, { isMarketplace: pre.source === "marketplace" });
+      const c = await classifyEmail(e, routes, { isMarketplace: pre.source === "marketplace", ddItems: ddItems || [] });
       stats.classified++;
       return { e, c, source: pre.source };
     } catch (err) {
@@ -92,7 +101,9 @@ async function run() {
         Object.assign(patch, { status: "new", due_at: dueAtFor(c.kind, e.created_at), closed_reason: null });
         stats.reopened++;
       }
+      if (c.dd_items?.length) patch.dd_item_keys = c.dd_items;
       await db.from("inbound_items").update(patch).eq("id", existing.id);
+      if (ASK_KINDS.includes(c.kind)) await noteAsk(route?.id, c.dd_items, e.created_at);
       stats.merged++;
     } else {
       const { error } = await db.from("inbound_items").insert({
@@ -101,11 +112,12 @@ async function run() {
         contact_id: e.contact_id || contactBy[sender] || null, route_id: route?.id || null,
         deal_id: route?.deal_id || nda?.deal_id || null, is_nda_signer: !!nda,
         kind: c.kind, priority, summary: c.summary || null, suggested_action: c.suggested_action || null,
-        classify_confidence: c.confidence ?? null, received_at: e.created_at, last_message_at: e.created_at,
+        classify_confidence: c.confidence ?? null, dd_item_keys: c.dd_items?.length ? c.dd_items : null, received_at: e.created_at, last_message_at: e.created_at,
         due_at: actionable ? dueAtFor(c.kind, e.created_at) : null,
         status: actionable ? "new" : "closed", closed_reason: actionable ? null : "auto: " + c.kind,
       });
-      if (error) stats.errors.push(`insert ${e.id}: ${error.message}`); else stats.new_items++;
+      if (error) stats.errors.push(`insert ${e.id}: ${error.message}`);
+      else { stats.new_items++; if (ASK_KINDS.includes(c.kind)) await noteAsk(route?.id, c.dd_items, e.created_at); }
     }
     await db.from("atm_activity_log").update({ inbox_processed_at: now }).eq("id", e.id);
   }
@@ -131,6 +143,22 @@ async function run() {
       const { error } = await db.from("inbound_items").insert(rows);
       if (error) stats.errors.push("escalations: " + error.message); else stats.escalations_added = rows.length;
     }
+  }
+
+  // ---- 2b. What buyers ask in deal rooms → DD priorities ------------------
+  const dealIdsWithRoute = Object.keys(byDeal);
+  if (dealIdsWithRoute.length && ddItems?.length) {
+    const { data: qs } = await db.from("deal_questions").select("id, deal_id, question, created_at")
+      .is("dd_mapped_at", null).in("deal_id", dealIdsWithRoute).order("created_at", { ascending: false }).limit(MAX_MAP_PER_RUN);
+    await inChunks(qs || [], 5, async (q) => {
+      try {
+        const keys = await mapQuestionToDD(q.question, ddItems);
+        await db.from("deal_questions").update({ dd_item_keys: keys, dd_mapped_at: now }).eq("id", q.id);
+        await db.from("inbound_items").update({ dd_item_keys: keys.length ? keys : null }).eq("deal_question_id", q.id);
+        await noteAsk(byDeal[q.deal_id]?.id, keys, q.created_at);
+        stats.questions_mapped++;
+      } catch (err) { stats.errors.push(`map ${q.id}: ${err.message}`); }
+    });
   }
 
   // ---- 3. Reply detection ----------------------------------------------------

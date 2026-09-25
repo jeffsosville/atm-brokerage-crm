@@ -51,6 +51,7 @@ function ItemRow({ it, selected, onSelect, onSave }) {
             <span style={{ fontWeight: 700 }}>{it.label}</span>
             <Chip state={it.state} />
             <span style={{ fontSize: 10, color: vis.fg, border: "1px solid " + C.line2, padding: "1px 6px", borderRadius: 3 }} title="Where this shows once verified">{vis.label}</span>
+            {it.buyer_asks > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: "#fb923c" }} title={it.last_buyer_ask_at ? "Last asked " + new Date(it.last_buyer_ask_at).toLocaleDateString() : ""}>Buyers asked {it.buyer_asks}×</span>}
           </div>
           {it.answer_text && <div style={{ marginTop: 6, fontSize: 13, color: C.text, whiteSpace: "pre-wrap" }}>{it.answer_text}</div>}
           {!it.answer_text && it.seller_question && <div style={{ marginTop: 6, fontSize: 12, color: C.faint }}>Ask: {it.seller_question}</div>}
@@ -146,6 +147,10 @@ export default function DDChecklist() {
           <span>{route.nda_count || 0} NDAs</span>
           <span>{score?.n_verified || 0} verified · {(score?.to_verify_keys || []).length} to verify · {score?.n_gaps || 0} gaps</span>
           <a href={"https://atmbrokerage.com/atm-route-for-sale/" + route.slug + "/"} target="_blank" rel="noreferrer" style={{ color: C.blue }}>Listing ↗</a>
+          <label style={{ display: "inline-flex", gap: 6, alignItems: "center", cursor: "pointer" }} title="Show the public transparency badge on atmbrokerage.com">
+            <input type="checkbox" checked={route.dd_badge_enabled !== false} onChange={(e) => act({ action: "badge", enabled: e.target.checked })} />
+            Public badge
+          </label>
         </div>
         <div style={{ marginTop: 8, fontSize: 12 }}>
           Seller: {route.seller_contact_name || <span style={{ color: "#f87171" }}>no name</span>} · {route.seller_contact_email || <span style={{ color: "#f87171" }}>no direct email — get this first</span>} · {route.seller_contact_phone || <span style={{ color: C.faint }}>no mobile</span>}
