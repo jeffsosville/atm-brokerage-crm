@@ -116,9 +116,11 @@ function BadgePreview({ slug, live }) {
       </div>
       <div style={{ background: "#fff", color: "#1f2937", borderRadius: 10, padding: "16px 18px", fontFamily: "Georgia, serif" }}>
         <div style={{ fontSize: 12, letterSpacing: ".06em", textTransform: "uppercase", color: "#1f3864", fontWeight: 700 }}>Due diligence transparency</div>
+        <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>Transparency = share of the checklist the seller has answered, including what they won't provide. Verified = share backed by documents ATM Brokerage has checked.</div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
           <div style={{ fontSize: 30, fontWeight: 700, color: col, lineHeight: 1 }}>{d.score}%</div>
           <div style={{ flex: 1, height: 9, background: "#eef1f5", borderRadius: 6, overflow: "hidden" }}><div style={{ width: d.score + "%", height: "100%", background: col }} /></div>
+          <div style={{ textAlign: "right", lineHeight: 1.1 }}><div style={{ fontSize: 20, fontWeight: 700, color: "#15803d" }}>{d.verified ?? 0}%</div><div style={{ fontSize: 11, color: "#6b7280" }}>verified</div></div>
         </div>
         <div style={{ fontSize: 12, color: "#4b5563", marginTop: 8 }}>
           {provided} of {d.total} checklist items provided by the seller · {d.counts.verified} verified by ATM Brokerage{d.counts.requested ? " · " + d.counts.requested + " requested" : ""}
@@ -189,7 +191,11 @@ export default function DDChecklist() {
         <a href="/dd" style={{ color: C.faint, textDecoration: "none", fontSize: 13 }}>← DD queue</a>
         <div style={{ display: "flex", alignItems: "center", gap: 20, marginTop: 8, flexWrap: "wrap" }}>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{route.title}</h1>
+          <span style={{ fontSize: 11, color: C.faint }}>Transparency</span>
           <ScoreBar score={score?.dd_score} width={160} />
+          <span style={{ fontSize: 11, color: C.faint }}>Verified</span>
+          <ScoreBar score={score?.verified_score} width={100} />
+          {score && !score.meets_floor && <span style={{ fontSize: 11, fontWeight: 700, color: "#f87171" }}>Below 70% go-live floor</span>}
         </div>
         <div style={{ marginTop: 8, fontSize: 12, color: C.dim, display: "flex", gap: 18, flexWrap: "wrap" }}>
           <span>{money(route.asking_price)}</span>

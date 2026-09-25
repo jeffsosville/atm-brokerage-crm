@@ -29,7 +29,10 @@
     var provided = d.counts.verified + d.counts.provided;
     var h = '<h4>Due diligence transparency</h4>' +
       '<div class="row"><div class="big" style="color:' + col + '">' + d.score + '%</div>' +
-      '<div class="bar"><i style="width:' + d.score + '%;background:' + col + '"></i></div></div>' +
+      '<div class="bar"><i style="width:' + d.score + '%;background:' + col + '"></i></div>' +
+      '<div style="text-align:right;line-height:1.1"><div style="font-size:20px;font-weight:700;color:#15803d">' + (d.verified || 0) + '%</div>' +
+      '<div style="font-size:11px;color:#6b7280">verified</div></div></div>' +
+      '<div class="meta">Transparency ' + d.score + '% of the checklist answered, including anything the seller won\'t provide · Verified ' + (d.verified || 0) + '% backed by documents we\'ve checked.</div>' +
       '<div class="meta">' + provided + ' of ' + d.total + ' checklist items provided by the seller · ' +
       d.counts.verified + ' verified by ATM Brokerage' + (d.counts.requested ? ' · ' + d.counts.requested + ' requested' : '') + '</div>' +
       '<button type="button">See the checklist</button><div class="list">';
