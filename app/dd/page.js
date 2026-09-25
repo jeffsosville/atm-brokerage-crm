@@ -60,7 +60,7 @@ export default function DDQueue() {
               <thead><tr>
                 <th style={th}>Listing</th><th style={th}>Asking</th><th style={th}>Score</th>
                 <th style={th}>Missing</th><th style={th}>Partial</th><th style={th}>To verify</th>
-                <th style={th}>Flags</th><th style={th}>Outreach</th>
+                <th style={th}>Flags</th><th style={th}>Buyers asking</th><th style={th}>Outreach</th>
               </tr></thead>
               <tbody>
                 {list.map(r => {
@@ -78,6 +78,7 @@ export default function DDQueue() {
                       <td style={{ ...td, color: (r.partial_keys || []).length ? "#facc15" : C.faint }}>{(r.partial_keys || []).length}</td>
                       <td style={{ ...td, color: (r.to_verify_keys || []).length ? "#60a5fa" : C.faint }}>{(r.to_verify_keys || []).length}</td>
                       <td style={{ ...td, color: r.open_flags ? "#fb923c" : C.faint }}>{r.open_flags}</td>
+                      <td style={{ ...td, color: r.buyer_asks_open ? "#fb923c" : C.faint }} title={(r.asked_open_keys || []).join(", ")}>{r.buyer_asks_open || 0}{r.asked_open_keys?.length ? " · " + r.asked_open_keys.slice(0, 3).join(", ") : ""}</td>
                       <td style={{ ...td, fontSize: 12 }}>
                         {r.touches ? (
                           <>
@@ -93,7 +94,7 @@ export default function DDQueue() {
             </table>
           </div>
         )}
-        <div style={{ fontSize: 11, color: C.faint, marginTop: 12 }}>Sorted by deal size and buyer activity. Score counts verified/received answers fully and partial answers as half.</div>
+        <div style={{ fontSize: 11, color: C.faint, marginTop: 12 }}>Sorted by deal size and how often buyers ask about missing items. "Buyers asking" counts questions on items that are still open. Score counts verified/received answers fully and partial answers as half.</div>
       </div>
     </div>
   );

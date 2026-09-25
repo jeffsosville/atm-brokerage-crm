@@ -991,6 +991,7 @@ export default function CRM() {
               <button onClick={() => { setView("pipeline"); setSelected(null); }} style={tabStyle(view === "pipeline")}>Pipeline</button>
               <button onClick={() => { setView("dealroom"); setSelected(null); }} style={tabStyle(view === "dealroom")}>🤖 Deal Room</button>
               <button onClick={() => window.location.href="/todos"} style={tabStyle(false)}>✅ Tasks</button>
+              <button onClick={() => window.location.href="/queue"} style={tabStyle(false)}>📥 Inbound</button>
               <button onClick={() => window.location.href="/dd"} style={tabStyle(false)}>📋 Due Diligence</button>
             </div>
           </div>
