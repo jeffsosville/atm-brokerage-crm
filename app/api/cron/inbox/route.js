@@ -197,8 +197,17 @@ async function run() {
   const { data: waitingNda } = await db.from("inbound_items").select("id, lead_email").eq("status", "awaiting_nda").not("lead_email", "is", null);
   if (waitingNda?.length) {
     const emails = [...new Set(waitingNda.map((w) => w.lead_email))];
-    const { data: signed } = await db.from("deal_buyer_access").select("buyer_email, created_at, deal_id").in("buyer_email", emails);
-    const signedBy = {}; (signed || []).forEach((sg) => { signedBy[(sg.buyer_email || "").toLowerCase()] = sg; });
+    // Website NDAs land in nda_signatures (WordPress snippet + email backfill); Deal Hub NDAs in deal_buyer_access.
+    const [{ data: signed }, { data: wpSigned }] = await Promise.all([
+      db.from("deal_buyer_access").select("buyer_email, created_at, deal_id").in("buyer_email", emails),
+      db.from("nda_signatures").select("email, signed_at, route_id").in("email", emails).order("signed_at"),
+    ]);
+    const signedBy = {};
+    const routeIds = [...new Set((wpSigned || []).map((w) => w.route_id).filter(Boolean))];
+    const { data: routeDeals } = routeIds.length ? await db.from("atm_routes").select("id, deal_id").in("id", routeIds) : { data: [] };
+    const dealOfRoute = Object.fromEntries((routeDeals || []).map((r) => [r.id, r.deal_id]));
+    (wpSigned || []).forEach((w) => { signedBy[(w.email || "").toLowerCase()] ||= { created_at: w.signed_at, deal_id: dealOfRoute[w.route_id] || null }; });
+    (signed || []).forEach((sg) => { signedBy[(sg.buyer_email || "").toLowerCase()] = sg; });
     for (const w of waitingNda) {
       const sg = signedBy[w.lead_email];
       if (!sg) continue;
