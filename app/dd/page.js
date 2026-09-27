@@ -43,7 +43,7 @@ export default function DDQueue() {
 
       <div style={{ padding: 24 }}>
         <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-          {[["Listings", list.length], ["Avg score", avg + "%"], ["Complete files", complete + " / " + list.length], ["Follow-ups due", due, due ? "#facc15" : null], ["Escalate to John", esc, esc ? "#f87171" : null]].map(([l, v, col]) => (
+          {[["Listings", list.length], ["Avg transparency", avg + "%"], ["Below floor", list.filter(r => !r.meets_floor).length], ["Complete files", complete + " / " + list.length], ["Follow-ups due", due, due ? "#facc15" : null], ["Escalate to John", esc, esc ? "#f87171" : null]].map(([l, v, col]) => (
             <div key={l} style={{ background: C.card, border: "1px solid " + C.line, borderRadius: 8, padding: "12px 16px", minWidth: 140 }}>
               <div style={{ fontSize: 11, color: C.faint, textTransform: "uppercase" }}>{l}</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: col || C.text }}>{v}</div>
@@ -58,7 +58,7 @@ export default function DDQueue() {
           <div style={{ overflowX: "auto", background: C.card, border: "1px solid " + C.line, borderRadius: 8 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
               <thead><tr>
-                <th style={th}>Listing</th><th style={th}>Asking</th><th style={th}>Score</th>
+                <th style={th}>Listing</th><th style={th}>Asking</th><th style={th}>Transparency</th><th style={th}>Verified</th>
                 <th style={th}>Missing</th><th style={th}>Partial</th><th style={th}>To verify</th>
                 <th style={th}>Flags</th><th style={th}>Buyers asking</th><th style={th}>Outreach</th>
               </tr></thead>
@@ -73,7 +73,8 @@ export default function DDQueue() {
                         {r.escalate_to_john && <div style={{ fontSize: 11, color: "#f87171", marginTop: 2 }}>3 touches unanswered — escalate to John</div>}
                       </td>
                       <td style={td}>{money(r.asking_price)}</td>
-                      <td style={td}><ScoreBar score={r.dd_score} /></td>
+                      <td style={td}><ScoreBar score={r.dd_score} />{!r.meets_floor && <div style={{ fontSize: 10, color: "#f87171", marginTop: 3 }}>below 70% floor</div>}</td>
+                      <td style={{ ...td, color: Number(r.verified_score) ? "#4ade80" : C.faint }}>{r.verified_score ?? 0}%</td>
                       <td style={{ ...td, color: (r.missing_keys || []).length ? "#f87171" : C.faint }}>{(r.missing_keys || []).length}</td>
                       <td style={{ ...td, color: (r.partial_keys || []).length ? "#facc15" : C.faint }}>{(r.partial_keys || []).length}</td>
                       <td style={{ ...td, color: (r.to_verify_keys || []).length ? "#60a5fa" : C.faint }}>{(r.to_verify_keys || []).length}</td>
