@@ -192,6 +192,14 @@ Every inquiry gets a row in `inbound_items`, an owner and a reply deadline.
 - **Buyer replies** to the auto-reply ("Re: NDA & Deal Room Access") come into info@ as normal buyer questions.
 - **If it breaks:** check the trigger and the Executions tab in Apps Script. The queue will show BizBuySell leads stuck in "Needs reply" instead of "Awaiting NDA".
 
+### NDA signatures from the website (added Sept 2026)
+
+- **What:** every NDA signed on atmbrokerage.com (WPForms form 6387) is stored in `nda_signatures` (email, name, phone, listing URL/slug, `route_id`).
+- **How it gets there:** WordPress snippet "NDA to CRM" (Code Snippets plugin) POSTs each submission to `/api/public/nda-signed` with header `x-nda-secret` = Vercel env `NDA_SIGNED_SECRET`. It sends no email to anyone.
+- **History:** rows with `source = 'email_backfill'` were loaded from the "Signed NDA confirmation" emails WPForms sends to info@ (Oct 2025 onward).
+- **Used by:** the Inbound queue marks "awaiting NDA" BizBuySell leads converted when their email appears here (or in `deal_buyer_access`).
+- **If it breaks:** no new `source = 'wpforms'` rows → check the snippet is active in WordPress, and that `NDA_SIGNED_SECRET` in Vercel matches the key in the snippet. A 401 in Vercel logs means the keys don't match.
+
 ## Due Diligence (added Sept 2026)
 
 - **Tables:** `dd_checklist_items` (per vertical, with a `visibility` of public / nda / internal), `route_dd_items`, `dd_touches`, `route_dd_flags`, `dd_seller_requests`. **Views:** `v_route_dd_items`, `v_route_dd_score`.
