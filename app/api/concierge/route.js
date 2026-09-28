@@ -87,7 +87,10 @@ RULES:
 8. If the buyer seems serious, suggest they reach out directly: Phone: +1 888-430-5535 or Email: info@atmbrokerage.com
 9. Keep answers concise but thorough.
 10. Do not address the buyer by name.
-11. Write plain text only — no markdown (no **bold**, no # headings). Simple hyphen lists are fine.`;
+11. Write plain text only — no markdown (no **bold**, no # headings). Simple hyphen lists are fine.
+12. HAND-OFF: if the buyer asks to talk, meet or get a call with the broker or a person; wants to make an offer or LOI; asks for documents or data that are not in DEAL DOCUMENTS AND DATA (P&Ls, tax returns, statements, location lists, contracts); or you cannot answer from the documents — tell them the broker will follow up personally, then end your reply with one final line exactly like:
+ESCALATE: <short reason, e.g. "wants a call with the broker" or "requests 2023-2025 P&Ls">
+Only add that line when one of these applies. Never mention the word ESCALATE anywhere else.`;
 
     const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
     const response = await anthropic.messages.create({
@@ -97,7 +100,11 @@ RULES:
       messages: messages,
     });
 
-    const answer = response.content[0]?.text || "I'm having trouble responding. Please try again.";
+    const raw = response.content[0]?.text || "I'm having trouble responding. Please try again.";
+    // The model flags hand-offs with a final "ESCALATE: reason" line; strip it before the buyer sees it.
+    const escMatch = raw.match(/\n?\s*ESCALATE:\s*(.+)\s*$/i);
+    const modelEscalation = escMatch ? escMatch[1].trim().slice(0, 200) : null;
+    const answer = (escMatch ? raw.slice(0, escMatch.index) : raw).trim();
 
     const lowerQ = question.toLowerCase();
     const lowerAnswer = answer.toLowerCase();
@@ -106,6 +113,9 @@ RULES:
   lowerQ.includes("speak with") ||
   lowerQ.includes("speak to") ||
   lowerQ.includes("talk to") ||
+  lowerQ.includes("talk with") ||
+  lowerQ.includes("the broker") ||
+  lowerQ.includes("schedule a call") ||
   lowerQ.includes("call me") ||
   lowerQ.includes("phone call") ||
   lowerQ.includes("phone number") ||
@@ -123,7 +133,8 @@ RULES:
       lowerAnswer.includes("not available in our") ||
       lowerAnswer.includes("information isn't included");
 
-    const escalated = buyerWantsHuman || aiCantAnswer;
+    const escalated = !!modelEscalation || buyerWantsHuman || aiCantAnswer;
+    const escalationReason = modelEscalation || (buyerWantsHuman ? "buyer asked for a person" : aiCantAnswer ? "concierge couldn't answer" : null);
     const confidence = escalated ? 0.5 : 0.85;
 
     // Save question — use supaInsert to get the row id back
@@ -145,7 +156,7 @@ RULES:
       await supaPost("atm_notifications", {
         type: "escalation",
         title: `Buyer needs help: ${buyerName || buyerEmail || "Unknown buyer"} → ${deal?.deal_name}`,
-        message: `"${question.substring(0, 200)}"${buyerEmail ? "\n\nReply to: " + buyerEmail : ""}${buyerPhone ? " | " + buyerPhone : ""}`,
+        message: `${escalationReason ? "Why: " + escalationReason + "\n\n" : ""}"${question.substring(0, 200)}"${buyerEmail ? "\n\nReply to: " + buyerEmail : ""}${buyerPhone ? " | " + buyerPhone : ""}`,
         priority: "high",
         metadata: JSON.stringify({
           deal_id: dealId,
@@ -187,6 +198,7 @@ RULES:
         token: token || null,
         confidence,
         escalated,
+        escalation_reason: escalationReason,
       }),
     });
 
