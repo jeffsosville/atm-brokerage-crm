@@ -24,11 +24,12 @@ export async function POST(request) {
   if (!email || !email.includes("@")) return Response.json({ error: "email required" }, { status: 400 });
 
   const listingUrl = clean(body.listing_url, 1000);
-  const slug = listingUrl?.match(/atm-route-for-sale\/([a-z0-9-]+)/i)?.[1]?.toLowerCase() || clean(body.listing_slug, 200);
+  const slug = listingUrl?.match(/atm-route-for-sale\/([a-z0-9-]+)/i)?.[1]?.toLowerCase() || clean(body.listing_slug, 200)?.toLowerCase().replace(/[^a-z0-9-]/g, "");
   let routeId = null;
   if (slug) {
-    const { data: route } = await db.from("atm_routes").select("id").eq("slug", slug).maybeSingle();
-    routeId = route?.id || null;
+    // Website URLs use the WordPress slug (wp_slug), which often differs from the CRM slug.
+    const { data: routes } = await db.from("atm_routes").select("id, wp_slug").or(`wp_slug.eq.${slug},slug.eq.${slug}`).limit(2);
+    routeId = (routes || []).find((r) => r.wp_slug === slug)?.id || routes?.[0]?.id || null;
   }
 
   const row = {
