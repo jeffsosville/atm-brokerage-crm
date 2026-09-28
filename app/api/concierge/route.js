@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { ddContextForDeal, hasDealAccess } from "../../../lib/ddContext";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -56,6 +57,13 @@ export async function POST(request) {
     );
     const context = (chunks || []).map((c) => c.content_chunk).join("\n\n");
 
+    // Due-diligence checklist answers (Chrislie's work). NDA-level items only for a valid Deal Room token.
+    const ndaAccess = await hasDealAccess(token, dealId).catch(() => false);
+    const dd = await ddContextForDeal(dealId, { includeNda: ndaAccess }).catch((e) => {
+      console.error("[concierge] dd context", e);
+      return { text: "", count: 0 };
+    });
+
     const messages = [];
     if (history && history.length > 0) {
       for (const msg of history.slice(-6)) {
@@ -76,8 +84,12 @@ Location: ${deal.route_cities || ""} ${deal.route_state || ""}` : "Deal informat
 DEAL DOCUMENTS AND DATA:
 ${context}
 
+DUE DILIGENCE CHECKLIST (answers collected from the seller; each line shows its status and source):
+${dd.text || "(none recorded yet)"}
+
 RULES:
-1. Answer based ONLY on the deal documents and data above, plus general ATM industry knowledge.
+1. Answer based ONLY on the deal documents, the due diligence checklist and data above, plus general ATM industry knowledge.
+1a. Prefer VERIFIED checklist answers over document text. For answers marked "not yet verified" or "partial", say they are from the seller and still being confirmed. If the checklist says the seller declined, say so plainly and hand off.
 2. NEVER reveal the seller's identity, personal information, or company name.
 3. NEVER share internal notes, broker communications, or confidential strategy.
 4. Be helpful and professional without being pushy.
@@ -202,7 +214,7 @@ Only add that line when one of these applies. Never mention the word ESCALATE an
       }),
     });
 
-    return Response.json({ answer, confidence, escalated, dlNumber: deal?.dl_number, sources: (chunks || []).length });
+    return Response.json({ answer, confidence, escalated, dlNumber: deal?.dl_number, sources: (chunks || []).length, dd_items: dd.count });
   } catch (err) {
     console.error("Concierge error:", err);
     return Response.json({ error: "Something went wrong", answer: "I'm having trouble right now. Please contact info@atmbrokerage.com." }, { status: 500 });
