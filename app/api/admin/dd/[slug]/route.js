@@ -25,15 +25,16 @@ export async function GET(request, { params }) {
   if (new URL(request.url).searchParams.get("badge")) {
     return Response.json(await buildPublicDD(route.id, route.title));
   }
-  const [items, flags, touches, score] = await Promise.all([
+  const [items, flags, touches, score, suggestions] = await Promise.all([
     adminDb.from("v_route_dd_items").select("*").eq("route_id", route.id).order("sort_order"),
     adminDb.from("route_dd_flags").select("*").eq("route_id", route.id).order("created_at"),
     adminDb.from("dd_touches").select("*").eq("route_id", route.id).order("sent_at", { ascending: false }),
     adminDb.from("v_route_dd_score").select("*").eq("route_id", route.id).maybeSingle(),
+    adminDb.from("dd_suggestions").select("*").eq("route_id", route.id).eq("status", "pending").order("created_at"),
   ]);
-  const err = items.error || flags.error || touches.error || score.error;
+  const err = items.error || flags.error || touches.error || score.error || suggestions.error;
   if (err) return Response.json({ error: err.message }, { status: 500 });
-  return Response.json({ route, items: items.data, flags: flags.data, touches: touches.data, score: score.data });
+  return Response.json({ route, items: items.data, flags: flags.data, touches: touches.data, score: score.data, suggestions: suggestions.data });
 }
 
 // PATCH /api/admin/dd/[slug]
@@ -104,6 +105,38 @@ export async function PATCH(request, { params }) {
         .eq("route_id", route.id).in("item_key", keys).is("first_asked_at", null);
     }
     return Response.json({ touch: data });
+  }
+
+  // Suggested answers (from deal room answers / uploaded files). Accept writes the checklist item with its source.
+  //   { action: "suggestion", id, decision: "accept" | "verify" | "dismiss", answer_text? }
+  if (body.action === "suggestion") {
+    const { data: sug } = await adminDb.from("dd_suggestions").select("*").eq("id", body.id).eq("route_id", route.id).maybeSingle();
+    if (!sug) return Response.json({ error: "Suggestion not found" }, { status: 404 });
+    if (sug.status !== "pending") return Response.json({ error: "Already decided" }, { status: 409 });
+    if (!["accept", "verify", "dismiss"].includes(body.decision)) return Response.json({ error: "bad decision" }, { status: 400 });
+
+    if (body.decision !== "dismiss") {
+      const status = body.decision === "verify" ? "verified" : "received";
+      const answer = (typeof body.answer_text === "string" && body.answer_text.trim()) || sug.answer_text;
+      const row = {
+        route_id: route.id, item_key: sug.item_key, status, answer_text: answer,
+        source_who: sug.source_label || sug.source_who,
+        source_method: sug.source_kind === "document" ? "document" : sug.source_kind === "email" ? "email" : "form",
+        source_date: now.slice(0, 10),
+        source_note: sug.excerpt ? "From: \"" + sug.excerpt + "\"" : null,
+        updated_by: who, updated_at: now,
+        closed_at: status === "verified" ? now : null,
+      };
+      const { error } = await adminDb.from("route_dd_items").upsert(row, { onConflict: "route_id,item_key" });
+      if (error) return Response.json({ error: error.message }, { status: 500 });
+      // Other pending suggestions for the same item are superseded
+      await adminDb.from("dd_suggestions").update({ status: "dismissed", decided_by: who + " (superseded)", decided_at: now })
+        .eq("route_id", route.id).eq("item_key", sug.item_key).eq("status", "pending").neq("id", sug.id);
+    }
+    await adminDb.from("dd_suggestions").update({
+      status: body.decision === "dismiss" ? "dismissed" : "accepted", decided_by: who, decided_at: now,
+    }).eq("id", sug.id);
+    return Response.json({ ok: true });
   }
 
   if (body.action === "badge") {

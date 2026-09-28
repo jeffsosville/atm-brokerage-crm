@@ -96,6 +96,33 @@ function ItemRow({ it, selected, onSelect, onSave }) {
 }
 
 
+const KIND = { deal_answer: "Deal room answer", document: "Uploaded file", email: "Email" };
+
+// Proposed answers found in deal room answers and uploaded files. Nothing is saved until Chrislie decides.
+function Suggestion({ sg, item, onAct }) {
+  const [text, setText] = useState(sg.answer_text);
+  const [busy, setBusy] = useState(false);
+  const go = async (decision) => { setBusy(true); try { await onAct({ action: "suggestion", id: sg.id, decision, answer_text: text }); } finally { setBusy(false); } };
+  return (
+    <div style={{ borderBottom: "1px solid " + C.line, padding: "12px 16px", display: "grid", gap: 6 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ color: C.faint, fontSize: 11 }}>{sg.item_key}</span>
+        <span style={{ fontWeight: 700 }}>{item?.label || sg.item_key}</span>
+        {item && <Chip state={item.state} />}
+        <span style={{ fontSize: 11, color: C.dim }}>{KIND[sg.source_kind] || sg.source_kind} · {sg.source_label}</span>
+      </div>
+      {item?.answer_text && <div style={{ fontSize: 12, color: C.faint }}>Current: {item.answer_text}</div>}
+      <textarea rows={2} value={text} onChange={e => setText(e.target.value)} style={input} />
+      {sg.excerpt && <div style={{ fontSize: 11, color: C.faint }}>From: "{sg.excerpt}"</div>}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button disabled={busy} onClick={() => go("verify")} style={{ ...btn(true), color: "#4ade80" }} title="You checked it against the file or the seller's written answer">✓ Accept as verified</button>
+        <button disabled={busy} onClick={() => go("accept")} style={btn(false)}>Accept (verify later)</button>
+        <button disabled={busy} onClick={() => go("dismiss")} style={{ ...btn(false), marginLeft: "auto" }}>Dismiss</button>
+      </div>
+    </div>
+  );
+}
+
 const BST = {
   verified: ["\u2713 Verified", "#15803d"], provided: ["Provided", "#1d4ed8"], partial: ["Partial", "#b45309"],
   requested: ["Requested", "#7c3aed"], pending: ["Pending", "#9ca3af"], not_provided: ["Not provided", "#6b7280"],
@@ -172,7 +199,7 @@ export default function DDChecklist() {
   if (err) return <div style={{ ...page, padding: 40, color: "#f87171" }}>{err} — <a href="/dd" style={{ color: C.blue }}>back to queue</a></div>;
   if (!d) return <div style={{ ...page, padding: 40, color: C.faint }}>Loading...</div>;
 
-  const { route, items, flags, touches, score } = d;
+  const { route, items, flags, touches, score, suggestions = [] } = d;
   const selKeys = Object.keys(sel).filter(k => sel[k]);
   const selItems = items.filter(i => selKeys.includes(i.item_key));
   const openFlags = flags.filter(f => !f.resolved);
@@ -216,6 +243,15 @@ export default function DDChecklist() {
 
       <div style={{ padding: 24, display: "grid", gridTemplateColumns: "minmax(0, 1fr) 340px", gap: 20, alignItems: "start" }}>
         <div>
+          {suggestions.length > 0 && (
+            <div style={{ ...card, borderColor: "#1d4ed8" }}>
+              <h2 style={{ ...h2, color: "#60a5fa" }}>Suggested answers ({suggestions.length}) — found in deal room answers and uploaded files</h2>
+              {suggestions.map(sg => (
+                <Suggestion key={sg.id} sg={sg} item={items.find(i => i.item_key === sg.item_key)} onAct={act} />
+              ))}
+            </div>
+          )}
+
           {openFlags.length > 0 && (
             <div style={{ ...card, borderColor: "#7c2d12" }}>
               <h2 style={{ ...h2, color: "#fb923c" }}>Contradictions to check ({openFlags.length}) — flag, don't fix silently</h2>

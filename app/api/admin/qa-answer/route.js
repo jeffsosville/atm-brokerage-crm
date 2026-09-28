@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { suggestFromText } from "../../../../lib/ddSuggest";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co",
@@ -66,6 +67,19 @@ export async function POST(request) {
       answer: answer.trim(),
       answered_by: responder.name,
     }).catch(err => console.error("[ingest] non-fatal:", err));
+
+    // Propose DD checklist answers from this answer (Chrislie accepts or dismisses on /dd)
+    try {
+      await suggestFromText({
+        dealId: responder.deal_id,
+        text: `Buyer question: ${question.question}\nAnswer from ${responder.name} (${responder.role}): ${answer.trim()}`,
+        sourceKind: "deal_answer",
+        sourceRef: savedAnswer.id,
+        sourceLabel: `${responder.name} (${responder.role}), deal room answer ${new Date().toISOString().slice(0, 10)}`,
+        sourceWho: responder.name,
+        hintKeys: question.dd_item_keys || [],
+      });
+    } catch (err) { console.error("[qa-answer] dd suggestions non-fatal:", err.message); }
 
     // Update last_used_at
     supabase.from("deal_responder_tokens")

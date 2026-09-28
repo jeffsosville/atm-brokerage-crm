@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { suggestFromText } from "../../../../lib/ddSuggest";
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
@@ -140,6 +141,8 @@ ${truncated}`,
   }
 }
 
+export const maxDuration = 300;
+
 export async function POST(request) {
   try {
     const { dealId } = await request.json();
@@ -213,6 +216,8 @@ export async function POST(request) {
           textLength: text.length,
           _chunks: chunks, // internal use
           _role: role,
+          _text: text,
+          _fileId: file.id,
         });
       } catch (err) {
         console.error(`Error processing ${file.file_name}:`, err);
@@ -234,7 +239,7 @@ export async function POST(request) {
         message: "No files successfully processed",
         filesProcessed: 0,
         skippedTemplates,
-        results: fileResults.map(({ _chunks, _role, ...rest }) => rest),
+        results: fileResults.map(({ _chunks, _role, _text, _fileId, ...rest }) => rest),
       });
     }
 
@@ -272,15 +277,27 @@ export async function POST(request) {
       }
     }
 
+    // Propose DD checklist answers from each file, for Chrislie to accept on /dd (never automatic).
+    let ddSuggestions = 0;
+    for (const r of fileResults) {
+      if (!r._text) continue;
+      try {
+        ddSuggestions += await suggestFromText({
+          dealId, text: r._text, sourceKind: "document", sourceRef: r._fileId, sourceLabel: r.file, sourceWho: r.file,
+        });
+      } catch (e) { console.error("[auto-ingest] dd suggestions", r.file, e.message); }
+    }
+
     return Response.json({
       success: true,
       dealName: deal.deal_name,
+      ddSuggestions,
       filesProcessed: fileResults.filter((r) => r.status === "success").length,
       filesSkippedTemplates: skippedTemplates,
       filesFailed: fileResults.filter((r) => r.status !== "success").length,
       chunksCreated: rowsToInsert.length,
       sourceTypesReplaced: sourceTypesUsed,
-      results: fileResults.map(({ _chunks, _role, ...rest }) => rest),
+      results: fileResults.map(({ _chunks, _role, _text, _fileId, ...rest }) => rest),
     });
   } catch (err) {
     console.error("Auto-ingest error:", err);
