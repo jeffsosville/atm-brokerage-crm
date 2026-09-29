@@ -206,3 +206,15 @@ Every inquiry gets a row in `inbound_items`, an owner and a reply deadline.
 - **UI:** `/dd` (queue) and `/dd/[slug]` (checklist, contradictions, seller email, badge preview).
 - **Buyer questions → DD:** the classifier tags DD item keys, and `dd_note_buyer_ask()` counts them. Routes with open items buyers ask about rank higher.
 - **Public badge:** `/api/public/dd/[DL-number or slug]` + `public/dd-badge.js`. It's off per listing (`atm_routes.dd_badge_enabled`) until switched on.
+
+## Website → CRM listing sync (nightly)
+
+atmbrokerage.com (WordPress) is the master for listings. Every night at 5:52 UTC (pg_cron job `wp-listing-sync-nightly`) calls `/api/cron/wp-sync`, which:
+
+- reads every portfolio item and its category (Available / Under Contract / Recently Sold),
+- sets `atm_routes.status` to active / pending / sold and the price from the listing title,
+- moves the linked deal's stage forward (listed → under_contract → closed). It never reopens a closed deal; that gets flagged instead,
+- writes a snapshot to `wp_listings`. Rows with `issue` set need a person, e.g. a live listing with no CRM route/DD checklist.
+
+It never creates or deletes deals. Preview without writing: `GET /api/cron/wp-sync?dry=1` with header `x-cron-secret`.
+To see what needs fixing: `select title, issue from wp_listings where issue is not null;`
