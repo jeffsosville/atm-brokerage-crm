@@ -28,10 +28,10 @@ async function inChunks(list, size, fn) {
 // Runs every 15 minutes (pg_cron → this URL). Safe to run repeatedly.
 async function run() {
   const now = new Date().toISOString();
-  const stats = { autoreplies_linked: 0, nda_conversions: 0, dd_asks_logged: 0, questions_mapped: 0, emails_seen: 0, classified: 0, prefiltered: 0, new_items: 0, merged: 0, reopened: 0, escalations_added: 0, marked_replied: 0, errors: [] };
+  const stats = { autoreplies_linked: 0, nda_conversions: 0, dd_asks_logged: 0, questions_mapped: 0, emails_seen: 0, classified: 0, prefiltered: 0, new_items: 0, merged: 0, reopened: 0, escalations_added: 0, marked_replied: 0, nda_from_email: 0, errors: [] };
 
   // Listings, for matching emails to a route
-  const { data: routeRows } = await db.from("atm_routes").select("id, slug, title, deal_id, status").in("status", ["active", "pending"]);
+  const { data: routeRows } = await db.from("atm_routes").select("id, slug, wp_slug, title, deal_id, status").in("status", ["active", "pending"]);
   const dealIds = (routeRows || []).map((r) => r.deal_id).filter(Boolean);
   const { data: dealRows } = dealIds.length ? await db.from("atm_deals").select("id, dl_number").in("id", dealIds) : { data: [] };
   const dl = Object.fromEntries((dealRows || []).map((d) => [d.id, d.dl_number]));
@@ -220,6 +220,33 @@ async function run() {
       }).eq("id", w.id);
       stats.nda_conversions++;
     }
+  }
+
+  // ---- 2d. Website NDA confirmations → nda_signatures -------------------------
+  // Backup for the WordPress snippet: every "Signed NDA confirmation" email in info@
+  // becomes an NDA record, so a signature can never go missing.
+  const { data: confs } = await db.from("atm_activity_log").select("gmail_id, snippet, body, created_at")
+    .eq("subject", "Signed NDA confirmation").gte("created_at", new Date(Date.now() - 7 * 864e5).toISOString()).limit(200);
+  for (const c of confs || []) {
+    const t = (c.body || c.snippet || "").replace(/\s+/g, " ");
+    const email = t.match(/Email\s+([^\s]+@[^\s]+)/i)?.[1]?.toLowerCase();
+    const slug = t.match(/atm-route-for-sale\/([a-z0-9-]+)/i)?.[1]?.toLowerCase();
+    if (!email || !c.gmail_id) continue;
+    // Skip if the snippet already recorded this signature (same email within 10 minutes)
+    const t0 = new Date(c.created_at).getTime();
+    const { data: dup } = await db.from("nda_signatures").select("id")
+      .eq("email", email).gte("signed_at", new Date(t0 - 6e5).toISOString()).lte("signed_at", new Date(t0 + 6e5).toISOString()).limit(1);
+    if (dup?.length) continue;
+    const r = slug ? routes.find((x) => x.wp_slug === slug || x.slug === slug) : null;
+    const { data: rr } = !r && slug ? await db.from("atm_routes").select("id").or(`wp_slug.eq.${slug},slug.eq.${slug}`).limit(1) : { data: null };
+    const { error } = await db.from("nda_signatures").upsert({
+      source: "email_confirm", entry_id: "gmail:" + c.gmail_id, email,
+      name: t.match(/Full Name\s+(.*?)\s+Phone/i)?.[1] || null,
+      phone: t.match(/Phone\s+([+\d]+)/i)?.[1] || null,
+      listing_url: slug ? `https://atmbrokerage.com/atm-route-for-sale/${slug}/` : null, listing_slug: slug || null,
+      route_id: r?.id || rr?.[0]?.id || null, signed_at: c.created_at, raw: { from: "Signed NDA confirmation email" },
+    }, { onConflict: "source,entry_id", ignoreDuplicates: true });
+    if (error) stats.errors.push("nda email: " + error.message); else stats.nda_from_email++;
   }
 
   // ---- 3. Reply detection ----------------------------------------------------
