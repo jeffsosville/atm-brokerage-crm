@@ -28,7 +28,7 @@ async function inChunks(list, size, fn) {
 // Runs every 15 minutes (pg_cron → this URL). Safe to run repeatedly.
 async function run() {
   const now = new Date().toISOString();
-  const stats = { autoreplies_linked: 0, nda_conversions: 0, dd_asks_logged: 0, questions_mapped: 0, emails_seen: 0, classified: 0, prefiltered: 0, new_items: 0, merged: 0, reopened: 0, escalations_added: 0, marked_replied: 0, nda_from_email: 0, errors: [] };
+  const stats = { autoreplies_linked: 0, nda_conversions: 0, dd_asks_logged: 0, questions_mapped: 0, emails_seen: 0, classified: 0, prefiltered: 0, new_items: 0, merged: 0, reopened: 0, escalations_added: 0, marked_replied: 0, nda_from_email: 0, website_forms: 0, errors: [] };
 
   // Listings, for matching emails to a route
   const { data: routeRows } = await db.from("atm_routes").select("id, slug, wp_slug, title, deal_id, status").in("status", ["active", "pending"]);
@@ -125,6 +125,57 @@ async function run() {
       else { stats.new_items++; if (ASK_KINDS.includes(c.kind)) await noteAsk(route?.id, c.dd_items, e.created_at); }
     }
     await db.from("atm_activity_log").update({ inbox_processed_at: now }).eq("id", e.id);
+  }
+
+  // ---- 1b. Website form submissions ------------------------------------------
+  // The site emails these from info@ to info@, so they're stored as "sent" and step 1
+  // never sees them. Parse the submitter out and queue them as leads (draft = new email).
+  const FORM_SUBJECTS = ["Contact Us page", "New Route Inquiry Submission", "Seller intake form"];
+  const { data: forms } = await db.from("atm_activity_log").select("id, subject, snippet, body, created_at")
+    .in("subject", FORM_SUBJECTS).is("inbox_processed_at", null).gte("created_at", since).order("created_at").limit(40);
+  for (const f of forms || []) {
+    const t = (f.body || f.snippet || "").replace(/\r/g, "");
+    const one = t.replace(/\s+/g, " ");
+    const pick = (re) => one.match(re)?.[1]?.trim() || null;
+    const email = pick(/Email:?\s+([^\s]+@[^\s]+)/i)?.toLowerCase();
+    const name = pick(/Name:?\s+(.*?)\s+(?:Email|Phone)/i);
+    const phone = pick(/Phone:?\s+([()+\d][\d() .+-]{6,})/i) || (one.match(/Inquiry:?\s+([+\d][\d() .-]{7,})\s*(?:Have a|Sent|$)/i)?.[1] || null);
+    const END = "\\s+(?:Hidden Field|Have a great day|Sent from|$)";
+    const message = pick(new RegExp("Paragraph Text\\s+(.*?)" + END, "i")) || pick(new RegExp("\\b(?:Inquiry|Message|Comments?):\\s+(.*?)" + END, "i"));
+    const location = pick(/Route Location:?\s+(.*?)\s+Inquiry/i);
+    const slug = one.match(/atm-route-for-sale\/([a-z0-9-]+)/i)?.[1]?.toLowerCase();
+    const route = slug ? routes.find((r) => r.wp_slug === slug || r.slug === slug) : null;
+    await db.from("atm_activity_log").update({ inbox_processed_at: now }).eq("id", f.id);
+    if (!email) continue;
+    // Same person submitting again (e.g. twice for the same listing): update the open item instead
+    const { data: prior } = await db.from("inbound_items").select("id").eq("source", "website_form").eq("lead_email", email)
+      .in("status", OPEN).gte("received_at", new Date(new Date(f.created_at).getTime() - 7 * 864e5).toISOString()).limit(1);
+    if (prior?.length) {
+      await db.from("inbound_items").update({ last_message_at: f.created_at, updated_at: now }).eq("id", prior[0].id);
+      stats.merged++;
+      continue;
+    }
+    const seller = /seller intake/i.test(f.subject) || /\b(sell|selling)\b/i.test(message || "");
+    const text = [message && `Message: ${message}`, location && `Route location: ${location}`, phone && `Phone: ${phone}`].filter(Boolean).join("\n") || "(no message)";
+    let c = { kind: seller ? "seller_lead" : "buyer_question", priority: "normal", summary: null, suggested_action: null };
+    try {
+      c = await classifyEmail({ from_email: email, subject: f.subject + (route ? ` — ${route.title}` : ""), snippet: text }, routes, { ddItems: ddItems || [] });
+      stats.classified++;
+    } catch (err) { stats.errors.push(`form classify ${f.id}: ${err.message}`); }
+    const r = route || (c.route_slug && bySlug[c.route_slug]) || null;
+    const actionable = !NON_ACTIONABLE.includes(c.kind);
+    const { error } = await db.from("inbound_items").insert({
+      source: "website_form", activity_id: f.id, thread_id: null, from_email: email, lead_email: email, lead_phone: phone,
+      from_name: name || c.from_name || null,
+      subject: r ? `Your inquiry about the ${r.title}` : seller ? "Selling your ATM route" : "Your ATM Brokerage inquiry",
+      snippet: `${f.subject}: ${text}`.slice(0, 1000), route_id: r?.id || null, deal_id: r?.deal_id || null,
+      kind: c.kind, priority: c.priority || "normal", summary: c.summary || `${f.subject} from ${name || email}`,
+      suggested_action: c.suggested_action || null, classify_confidence: c.confidence ?? null,
+      received_at: f.created_at, last_message_at: f.created_at,
+      due_at: actionable ? dueAtFor(c.kind, f.created_at) : null,
+      status: actionable ? "new" : "closed", closed_reason: actionable ? null : "auto: " + c.kind,
+    });
+    if (error) stats.errors.push(`form insert ${f.id}: ${error.message}`); else stats.website_forms++;
   }
 
   // ---- 2. Deal-room questions the concierge couldn't answer ---------------

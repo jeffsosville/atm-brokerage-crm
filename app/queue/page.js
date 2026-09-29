@@ -11,7 +11,7 @@ const KIND = {
   marketplace_lead: ["Marketplace lead", "#22d3ee"], vendor: ["Vendor", "#64748b"], internal: ["Internal", "#64748b"],
   automated: ["Automated", "#64748b"], spam: ["Spam", "#64748b"], other: ["Other", "#94a3b8"],
 };
-const SRC = { email: "Email", marketplace: "BizBuySell", deal_room: "Deal room", listing: "Listing page", nda: "NDA" };
+const SRC = { website_form: "Website form", email: "Email", marketplace: "BizBuySell", deal_room: "Deal room", listing: "Listing page", nda: "NDA" };
 
 function ago(iso) {
   const m = Math.round((Date.now() - new Date(iso)) / 60000);

@@ -21,7 +21,7 @@ async function handler(request) {
   if (!authorized(request)) return Response.json({ error: "unauthorized" }, { status: 401 });
   const since = new Date(Date.now() - LOOKBACK_DAYS * 864e5).toISOString();
   const { data: items, error } = await db.from("inbound_items").select("*")
-    .in("status", ["new", "drafted"]).in("kind", DRAFT_KINDS).in("source", ["email", "deal_room"])
+    .in("status", ["new", "drafted"]).in("kind", DRAFT_KINDS).in("source", ["email", "deal_room", "website_form"])
     .gte("last_message_at", since).order("last_message_at", { ascending: false }).limit(60);
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
