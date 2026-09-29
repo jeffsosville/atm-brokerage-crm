@@ -1,5 +1,5 @@
 import { adminDb as db } from "../../../../lib/serverAuth";
-import { draftAndSave, DRAFT_KINDS } from "../../../../lib/inbox/draft";
+import { draftAndSave, DRAFT_KINDS, shouldDraft } from "../../../../lib/inbox/draft";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -25,7 +25,7 @@ async function handler(request) {
     .gte("last_message_at", since).order("last_message_at", { ascending: false }).limit(60);
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
-  const todo = (items || []).filter((i) => !i.draft_generated_at || new Date(i.last_message_at) > new Date(i.draft_generated_at)).slice(0, MAX_PER_RUN);
+  const todo = (items || []).filter((i) => shouldDraft(i) && (!i.draft_generated_at || new Date(i.last_message_at) > new Date(i.draft_generated_at))).slice(0, MAX_PER_RUN);
   const stats = { candidates: todo.length, drafted: 0, errors: [] };
   for (let k = 0; k < todo.length; k += 3) {
     await Promise.all(todo.slice(k, k + 3).map(async (i) => {
