@@ -1,6 +1,8 @@
 import { adminDb as db, getUser, unauthorized } from "../../../../lib/serverAuth";
+import { draftAndSave } from "../../../../lib/inbox/draft";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 const OPEN = ["new", "drafted", "awaiting_john"];
 const STATUSES = ["new", "drafted", "awaiting_john", "awaiting_nda", "replied", "closed", "not_a_lead"];
 const CHASE = [...OPEN, "awaiting_nda"]; // things someone may need to act on
@@ -37,12 +39,18 @@ export async function GET(request) {
   });
 }
 
-// PATCH { id, status?, owner?, notes?, closed_reason? }
+// PATCH { id, status?, owner?, notes?, closed_reason? }  or  { id, action: "redraft" }
 export async function PATCH(request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const b = await request.json().catch(() => ({}));
   if (!b.id) return Response.json({ error: "id required" }, { status: 400 });
+  if (b.action === "redraft") {
+    const { data: item } = await db.from("inbound_items").select("*").eq("id", b.id).single();
+    if (!item) return Response.json({ error: "not found" }, { status: 404 });
+    try { return Response.json({ item: { ...item, ...(await draftAndSave(item)) } }); }
+    catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
+  }
   if (b.status && !STATUSES.includes(b.status)) return Response.json({ error: "bad status" }, { status: 400 });
   const now = new Date().toISOString();
   const patch = { updated_at: now, updated_by: user.email };

@@ -218,3 +218,13 @@ atmbrokerage.com (WordPress) is the master for listings. Every night at 5:52 UTC
 
 It never creates or deletes deals. Preview without writing: `GET /api/cron/wp-sync?dry=1` with header `x-cron-secret`.
 To see what needs fixing: `select title, issue from wp_listings where issue is not null;`
+
+## Email drafts (Inbound queue → Gmail Drafts)
+
+Nothing is ever sent automatically.
+
+1. `/api/cron/drafts` (pg_cron `drafts-every-15-min`, at :07/:22/:37/:52) drafts a reply for queue items of kind buyer_question, data_room, existing_deal, offer, seller_lead from the last 3 days, and redrafts when a new message arrives in the thread. It uses only approved DD checklist answers for that listing (NDA-level facts only if the buyer signed that listing's NDA), John's past answers (`email_qa`), and the thread text (`atm_activity_log.body`). Offers and anything it can't answer are flagged "Needs John".
+2. On the Mac, `gmail_draft_push.py` runs right after `gmail_sync.py` (every 30 min). It creates the Gmail draft as a reply in the same thread in info@ or john@, updates it after a redraft, and deletes leftover drafts for items answered some other way.
+3. In the queue each item shows the draft, where it is, and Copy / Redraft. Deal-room questions get a draft answer to paste into the deal room (not pushed to Gmail).
+
+Knobs (Vercel env): `DRAFTS_PER_RUN` (6), `DRAFTS_LOOKBACK_DAYS` (3), `CLAUDE_DRAFT_MODEL`.

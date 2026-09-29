@@ -26,13 +26,49 @@ function dueLabel(iso) {
   const txt = h < 1 ? Math.round(h * 60) + "m" : h < 48 ? Math.round(h) + "h" : Math.round(h / 24) + "d";
   return ms < 0 ? { t: "overdue " + txt, c: "#f87171" } : { t: "due in " + txt, c: h < 2 ? "#facc15" : C.faint };
 }
-const gmailLink = (i) => i.thread_id ? `https://mail.google.com/mail/u/?authuser=info@atmbrokerage.com#all/${i.thread_id}` : null;
+const gmailLink = (i) => i.thread_id ? `https://mail.google.com/mail/u/?authuser=${i.draft_mailbox === "john" ? "john" : "info"}@atmbrokerage.com#all/${i.thread_id}` : null;
+const DRAFTABLE = ["buyer_question", "data_room", "existing_deal", "offer", "seller_lead"];
+
+function Draft({ i, onRedraft, busy }) {
+  const [copied, setCopied] = useState(false);
+  if (!i.draft_text) {
+    if (!DRAFTABLE.includes(i.kind) || !["new", "drafted"].includes(i.status)) return null;
+    return (
+      <div style={{ marginTop: 8, fontSize: 12, color: C.faint }}>
+        {i.draft_error ? <span style={{ color: "#f87171" }}>Draft failed: {i.draft_error} </span> : null}
+        <button style={btn(false)} disabled={busy} onClick={onRedraft}>{busy ? "Drafting…" : "Draft a reply"}</button>
+      </div>
+    );
+  }
+  const where = i.source === "deal_room"
+    ? "Copy this into the deal-room answer."
+    : i.draft_pushed_at && (!i.draft_generated_at || i.draft_pushed_at >= i.draft_generated_at)
+      ? `In ${i.draft_mailbox}@ Gmail Drafts, in the same thread. Edit and send from Gmail.`
+      : `Goes to ${i.draft_mailbox}@ Gmail Drafts at the next sync (every 30 min).`;
+  return (
+    <div style={{ marginTop: 10, border: "1px solid " + (i.must_go_to_john ? "#7f1d1d" : C.line), borderRadius: 6, padding: 10, background: "rgba(96,165,250,0.05)" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+        <span style={{ fontWeight: 700, color: C.blue }}>Draft reply</span>
+        {i.must_go_to_john && <span style={{ color: "#f87171", fontWeight: 700 }}>Needs John</span>}
+        <span style={{ color: C.faint }}>{where}</span>
+      </div>
+      {i.draft_notes && <div style={{ marginTop: 4, fontSize: 12, color: "#fbbf24" }}>{i.draft_notes}</div>}
+      <div style={{ marginTop: 6, whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.45 }}>{i.draft_text}</div>
+      {i.dd_items_missing?.length > 0 && <div style={{ marginTop: 6, fontSize: 11, color: C.faint }}>Asked but not in the checklist yet: {i.dd_items_missing.join(", ")}</div>}
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        <button style={btn(false)} onClick={() => { navigator.clipboard?.writeText(i.draft_text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "Copied" : "Copy"}</button>
+        <button style={btn(false)} disabled={busy} onClick={onRedraft}>{busy ? "Drafting…" : "Redraft"}</button>
+      </div>
+    </div>
+  );
+}
 
 export default function Queue() {
   const { user, loading } = useAuth();
   const [view, setView] = useState("open");
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
+  const [drafting, setDrafting] = useState(null);
 
   const load = useCallback(() => authFetch("/api/admin/inbound?view=" + view).then(setD).catch((e) => setErr(e.message)), [view]);
   useEffect(() => { if (user) { setD(null); load(); } }, [user, load]);
@@ -40,6 +76,12 @@ export default function Queue() {
   const act = async (id, body) => {
     try { await authFetch("/api/admin/inbound", { method: "PATCH", body: JSON.stringify({ id, ...body }) }); load(); }
     catch (e) { alert(e.message); }
+  };
+  const redraft = async (id) => {
+    setDrafting(id);
+    try { await authFetch("/api/admin/inbound", { method: "PATCH", body: JSON.stringify({ id, action: "redraft" }) }); load(); }
+    catch (e) { alert(e.message); }
+    setDrafting(null);
   };
 
   if (loading) return <div style={{ ...page, padding: 40, color: C.faint }}>Loading...</div>;
@@ -89,6 +131,7 @@ export default function Queue() {
               <div style={{ marginTop: 4, fontSize: 13 }}>{i.summary || i.subject}</div>
               {i.snippet && <div style={{ marginTop: 4, fontSize: 12, color: C.faint, maxHeight: 36, overflow: "hidden" }}>{i.snippet}</div>}
               {i.suggested_action && <div style={{ marginTop: 4, fontSize: 12, color: "#93c5fd" }}>→ {i.suggested_action}</div>}
+              <Draft i={i} busy={drafting === i.id} onRedraft={() => redraft(i.id)} />
               {i.closed_reason && <div style={{ marginTop: 4, fontSize: 11, color: C.faint }}>{i.closed_reason}</div>}
               <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                 {g && <a href={g} target="_blank" rel="noreferrer" style={{ ...btn(true), textDecoration: "none" }}>Open in Gmail</a>}
@@ -107,7 +150,7 @@ export default function Queue() {
           );
         })}
         <div style={{ fontSize: 11, color: C.faint, marginTop: 12 }}>
-          Checks for new mail every 15 minutes. An item is marked replied automatically when a reply shows up in the same Gmail thread. Reply targets: offers and seller leads 2 business hours, data-room issues 4, buyer questions same business day. BizBuySell leads get the automatic NDA email (Apps Script on info@), move to Awaiting NDA, and only need a personal follow-up if they have not signed within 3 business days.
+          Checks for new mail every 15 minutes and drafts a reply for new buyer questions, data-room issues, offers, deals in progress and seller leads (nothing is ever sent automatically). An item is marked replied automatically when a reply shows up in the same Gmail thread. Reply targets: offers and seller leads 2 business hours, data-room issues 4, buyer questions same business day. BizBuySell leads get the automatic NDA email (Apps Script on info@), move to Awaiting NDA, and only need a personal follow-up if they have not signed within 3 business days.
         </div>
       </div>
     </div>
