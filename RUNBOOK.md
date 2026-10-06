@@ -228,3 +228,26 @@ Nothing is ever sent automatically.
 3. In the queue each item shows the draft, where it is, and Copy / Redraft. Deal-room questions get a draft answer to paste into the deal room (not pushed to Gmail).
 
 Knobs (Vercel env): `DRAFTS_PER_RUN` (6), `DRAFTS_LOOKBACK_DAYS` (3), `CLAUDE_DRAFT_MODEL`.
+
+## Multiple verticals: ATM, VendingExits, CleaningExits (added Oct 2026)
+
+One CRM, one inbound queue, one NDA record. Every row that belongs to a deal carries `vertical_id` (`verticals` table: atm, vending, cleaning, pest).
+
+- **Deals:** `atm_deals.deal_type` ('vending' / 'cleaning', null = ATM) and `vertical_id` are kept in sync by trigger `trg_deal_sync_vertical`. Routes and deal tokens inherit their deal's vertical; changing a deal's vertical cascades. (`supabase/migrations/20261006_vertical_inheritance.sql`.)
+- **In-house listings:** vending and cleaning listings are rows in `inhouse_listings` (`vertical` = 'vending' / 'cleaning', `crm_deal_id` → `atm_deals.id`). Each site reads them from here, so a new listing is a row plus a deal — no redeploy. Without `crm_deal_id` the NDA still records but the buyer's Deal Hub is empty.
+- **NDA:** vendingexits.com and cleaningexits.com `/nda?listing=<slug>` → `/api/listing-nda` → `deal_tokens` (Deal Hub) + `deal_buyer_access`, buyer + broker emails from that brand. Trigger `trg_mirror_token_to_nda` copies those signers into `nda_signatures` (`source = 'deal_token'`) so all NDAs are in one table.
+- **Website forms:** sell and contact pages on both sites → `/api/inquiry` → `inbound_items` (`source = 'website_form'`, `lead_channel` = the site) with the site's vertical. Vending/cleaning items are owned by Jeff.
+- **Drafts:** the drafter writes as John at ATM Brokerage into info@, so `/api/cron/drafts` skips vending/cleaning items for now. They sit in the queue undrafted.
+- **NDA follow-up drip:** `/api/cron/nda-followups` (hourly at :30 via pg_cron `nda-followups-hourly`) sends Day 1 / Day 2 / Day 3 emails after a buyer first opens the Deal Hub, branded by the deal's vertical. Each step claims its `followup_N_sent_at` column before sending, so it can't double-send. Unsubscribe: `/api/unsubscribe/<token>`. Preview: add `?dry=1`. This replaces the cron in the retired atmbrokerage-next project — remove that project's cron (or the project) once this one is running.
+
+## BizBuySell leads across verticals
+
+All BizBuySell listings (any vertical) should send leads to info@, the one inbox `gmail_sync.py` reads.
+
+- The inbox cron parses each lead (Listing ID, headline, contact name/email/phone, invest, timeline) into the queue row and routes it: `marketplace_listings` (Listing ID → deal/vertical/in-house slug) first, then the headline matched to our listings, then keywords (vending / cleaning / else ATM). How it routed is in `notes` ("Routed by …").
+- **Map each new BizBuySell listing** when it goes live: `insert into marketplace_listings (external_id, vertical_id, deal_id, inhouse_slug, headline) …` (example in the migration).
+- **Who replies** is `MARKETPLACE_AUTOREPLY` (Vercel env):
+  - `off` (default) — CRM sends nothing. The "BizBuySell Auto Reply" Apps Script on info@ answers every lead with the ATM NDA link — including vending/cleaning leads, which is wrong once those are listed.
+  - `nonatm` — CRM sends the vending/cleaning reply (brand sender, that listing's NDA link). The Apps Script must skip non-ATM headlines or buyers get two emails.
+  - `all` — CRM answers every lead. Turn the Apps Script off first.
+- Replies are logged to `atm_activity_log` (`type = 'marketplace_autoreply'`) and the item moves to `awaiting_nda`; when the buyer signs (any site) it converts.

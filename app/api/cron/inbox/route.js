@@ -1,6 +1,7 @@
 import { adminDb as db } from "../../../../lib/serverAuth";
 import { preFilter, classifyEmail, mapQuestionToDD, NON_ACTIONABLE } from "../../../../lib/inbox/classify";
 import { dueAtFor } from "../../../../lib/inbox/sla";
+import { parseMarketplaceLead, resolveMarketplaceLead, marketplaceReply, shouldAutoReply, sendMarketplaceReply } from "../../../../lib/inbox/marketplace";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -28,18 +29,35 @@ async function inChunks(list, size, fn) {
 // Runs every 15 minutes (pg_cron → this URL). Safe to run repeatedly.
 async function run() {
   const now = new Date().toISOString();
-  const stats = { autoreplies_linked: 0, nda_conversions: 0, dd_asks_logged: 0, questions_mapped: 0, emails_seen: 0, classified: 0, prefiltered: 0, new_items: 0, merged: 0, reopened: 0, escalations_added: 0, marked_replied: 0, nda_from_email: 0, website_forms: 0, errors: [] };
+  const stats = { marketplace_routed: 0, marketplace_autoreplied: 0, autoreplies_linked: 0, nda_conversions: 0, dd_asks_logged: 0, questions_mapped: 0, emails_seen: 0, classified: 0, prefiltered: 0, new_items: 0, merged: 0, reopened: 0, escalations_added: 0, marked_replied: 0, nda_from_email: 0, website_forms: 0, errors: [] };
 
   // Listings, for matching emails to a route
-  const { data: routeRows } = await db.from("atm_routes").select("id, slug, wp_slug, title, deal_id, status").in("status", ["active", "pending"]);
+  const { data: routeRows } = await db.from("atm_routes").select("id, slug, wp_slug, title, deal_id, status, vertical_id").in("status", ["active", "pending"]);
   const dealIds = (routeRows || []).map((r) => r.deal_id).filter(Boolean);
-  const { data: dealRows } = dealIds.length ? await db.from("atm_deals").select("id, dl_number").in("id", dealIds) : { data: [] };
+  const { data: dealRows } = dealIds.length ? await db.from("atm_deals").select("id, dl_number, deal_type, vertical_id").in("id", dealIds) : { data: [] };
   const dl = Object.fromEntries((dealRows || []).map((d) => [d.id, d.dl_number]));
   const routes = (routeRows || []).map((r) => ({ ...r, dl_number: dl[r.deal_id] || null }));
   const bySlug = Object.fromEntries(routes.map((r) => [r.slug, r]));
   const byDeal = Object.fromEntries(routes.filter((r) => r.deal_id).map((r) => [r.deal_id, r]));
-  const { data: atmV } = await db.from("verticals").select("id").eq("slug", "atm").maybeSingle();
-  const { data: ddItems } = atmV ? await db.from("dd_checklist_items").select("item_key, label, seller_question").eq("vertical_id", atmV.id).neq("visibility", "internal").order("sort_order") : { data: [] };
+  // Verticals: every queue row is tagged ATM / vending / cleaning, and DD keys come from that vertical's checklist
+  const { data: vRows } = await db.from("verticals").select("id, slug");
+  const vIdBySlug = Object.fromEntries((vRows || []).map((v) => [v.slug, v.id]));
+  const { data: allDd } = await db.from("dd_checklist_items").select("item_key, label, seller_question, vertical_id").neq("visibility", "internal").order("sort_order");
+  const ddByVertical = {};
+  (allDd || []).forEach((d) => { (ddByVertical[d.vertical_id] ||= []).push(d); });
+  const ddItems = ddByVertical[vIdBySlug.atm] || []; // default when the listing isn't known yet
+  const ddFor = (vid) => ddByVertical[vid] || ddItems;
+  // deal → vertical; deal_type is the explicit marker (vertical_id can carry the ATM default)
+  const dealVertical = {};
+  const setDealVertical = (d) => { dealVertical[d.id] = (d.deal_type && vIdBySlug[d.deal_type.toLowerCase()]) || d.vertical_id || null; };
+  (dealRows || []).forEach(setDealVertical);
+  const loadDealVerticals = async (ids) => {
+    const need = [...new Set(ids.filter((id) => id && !(id in dealVertical)))];
+    if (!need.length) return;
+    const { data } = await db.from("atm_deals").select("id, deal_type, vertical_id").in("id", need);
+    (data || []).forEach(setDealVertical);
+  };
+  const verticalOf = (route, dealId) => (dealId && dealVertical[dealId]) || route?.vertical_id || null;
   const noteAsk = async (routeId, keys, at) => {
     if (!routeId || !keys?.length) return;
     const { error } = await db.rpc("dd_note_buyer_ask", { p_route: routeId, p_keys: keys, p_at: at });
@@ -111,18 +129,56 @@ async function run() {
       if (ASK_KINDS.includes(c.kind)) await noteAsk(route?.id, c.dd_items, e.created_at);
       stats.merged++;
     } else {
-      const { error } = await db.from("inbound_items").insert({
+      // Marketplace (BizBuySell) leads: route by the marketplace Listing ID → vertical/deal, and keep the buyer's details
+      let mk = null;
+      if (source === "marketplace") {
+        try {
+          const { data: full } = await db.from("atm_activity_log").select("body").eq("id", e.id).maybeSingle();
+          const lead = parseMarketplaceLead(full?.body || e.snippet || "", e.subject || "");
+          mk = { lead, res: await resolveMarketplaceLead(lead, { verticals: vIdBySlug, routes }) };
+          stats.marketplace_routed++;
+        } catch (err) { stats.errors.push(`marketplace parse ${e.id}: ${err.message}`); }
+      }
+      const dealId = mk?.res.deal_id || route?.deal_id || nda?.deal_id || null;
+      await loadDealVerticals([dealId]);
+      const { data: inserted, error } = await db.from("inbound_items").insert({
+        vertical_id: mk?.res.vertical_id || verticalOf(route, dealId),
+        lead_email: mk?.lead.email || null, lead_name: mk?.lead.name || null, lead_phone: mk?.lead.phone || null,
+        lead_location: mk?.lead.zip || null, lead_channel: mk ? mk.lead.marketplace : null,
+        notes: mk ? [mk.lead.listingId && `${mk.lead.marketplace} listing ${mk.lead.listingId}`, mk.lead.headline, mk.lead.invest && `Able to invest: ${mk.lead.invest}`, mk.lead.timeline && `Purchase within: ${mk.lead.timeline}`, `Routed by ${mk.res.via}`].filter(Boolean).join(" · ") : null,
         source, activity_id: e.id, thread_id: e.thread_id, from_email: e.from_email,
-        from_name: c.from_name || nda?.buyer_name || null, subject: e.subject, snippet: e.snippet,
-        contact_id: e.contact_id || contactBy[sender] || null, route_id: route?.id || null,
-        deal_id: route?.deal_id || nda?.deal_id || null, is_nda_signer: !!nda,
+        from_name: c.from_name || mk?.lead.name || nda?.buyer_name || null, subject: e.subject, snippet: e.snippet,
+        contact_id: e.contact_id || contactBy[sender] || null, route_id: mk?.res.route_id || route?.id || null,
+        deal_id: dealId, is_nda_signer: !!nda,
         kind: c.kind, priority, summary: c.summary || null, suggested_action: c.suggested_action || null,
         classify_confidence: c.confidence ?? null, dd_item_keys: c.dd_items?.length ? c.dd_items : null, received_at: e.created_at, last_message_at: e.created_at,
         due_at: actionable ? dueAtFor(c.kind, e.created_at) : null,
         status: actionable ? "new" : "closed", closed_reason: actionable ? null : "auto: " + c.kind,
-      });
+      }).select("id").maybeSingle();
       if (error) stats.errors.push(`insert ${e.id}: ${error.message}`);
-      else { stats.new_items++; if (ASK_KINDS.includes(c.kind)) await noteAsk(route?.id, c.dd_items, e.created_at); }
+      else {
+        stats.new_items++;
+        if (ASK_KINDS.includes(c.kind)) await noteAsk(route?.id, c.dd_items, e.created_at);
+        // Brand-correct NDA reply to the marketplace buyer (see MARKETPLACE_AUTOREPLY in lib/inbox/marketplace.js)
+        if (mk && inserted?.id && actionable && mk.lead.email && shouldAutoReply(mk.res.vertical)) {
+          try {
+            const reply = marketplaceReply(mk.lead, mk.res);
+            await sendMarketplaceReply(mk.lead.email, reply);
+            const at = new Date().toISOString();
+            await db.from("inbound_items").update({
+              status: "awaiting_nda", auto_replied_at: at, first_response_at: at,
+              due_at: dueAtFor("nda_followup", at), updated_at: at, updated_by: `auto: marketplace reply (${mk.res.vertical})`,
+              suggested_action: `NDA link sent automatically (${reply.ndaUrl}). If they haven't signed by the due time, follow up personally.`,
+            }).eq("id", inserted.id);
+            await db.from("atm_activity_log").insert({
+              type: "marketplace_autoreply", activity_type: "email_outbound", subject: reply.subject,
+              body: reply.text, to_email: mk.lead.email, source: "inbox_cron", source_id: inserted.id,
+              metadata: { vertical: mk.res.vertical, via: mk.res.via, listing_id: mk.lead.listingId, nda_url: reply.ndaUrl },
+            });
+            stats.marketplace_autoreplied++;
+          } catch (err) { stats.errors.push(`marketplace reply ${e.id}: ${err.message}`); }
+        }
+      }
     }
     await db.from("atm_activity_log").update({ inbox_processed_at: now }).eq("id", e.id);
   }
@@ -168,7 +224,7 @@ async function run() {
       source: "website_form", activity_id: f.id, thread_id: null, from_email: email, lead_email: email, lead_phone: phone,
       from_name: name || c.from_name || null,
       subject: r ? `Your inquiry about the ${r.title}` : seller ? "Selling your ATM route" : "Your ATM Brokerage inquiry",
-      snippet: `${f.subject}: ${text}`.slice(0, 1000), route_id: r?.id || null, deal_id: r?.deal_id || null,
+      snippet: `${f.subject}: ${text}`.slice(0, 1000), route_id: r?.id || null, deal_id: r?.deal_id || null, vertical_id: verticalOf(r, r?.deal_id),
       kind: c.kind, priority: c.priority || "normal", summary: c.summary || `${f.subject} from ${name || email}`,
       suggested_action: c.suggested_action || null, classify_confidence: c.confidence ?? null,
       received_at: f.created_at, last_message_at: f.created_at,
@@ -188,10 +244,11 @@ async function run() {
       db.from("deal_answers").select("question_id").in("question_id", ids),
     ]);
     const skip = new Set([...(have || []).map((x) => x.deal_question_id), ...(answered || []).map((x) => x.question_id)]);
+    await loadDealVerticals(esc.map((q) => q.deal_id));
     const rows = esc.filter((q) => !skip.has(q.id)).map((q) => ({
       source: "deal_room", deal_question_id: q.id, from_email: q.buyer_email, from_name: q.buyer_name,
       subject: "Deal-room question", snippet: q.question, summary: q.question, kind: "buyer_question",
-      priority: "normal", is_nda_signer: true, deal_id: q.deal_id, route_id: byDeal[q.deal_id]?.id || null,
+      priority: "normal", is_nda_signer: true, deal_id: q.deal_id, route_id: byDeal[q.deal_id]?.id || null, vertical_id: verticalOf(byDeal[q.deal_id], q.deal_id),
       received_at: q.created_at, last_message_at: q.created_at, due_at: dueAtFor("buyer_question", q.created_at),
       suggested_action: "Answer in the deal room (it will be shared with every NDA buyer) or reply to the buyer directly.",
     }));
@@ -208,7 +265,7 @@ async function run() {
       .is("dd_mapped_at", null).in("deal_id", dealIdsWithRoute).order("created_at", { ascending: false }).limit(MAX_MAP_PER_RUN);
     await inChunks(qs || [], 5, async (q) => {
       try {
-        const keys = await mapQuestionToDD(q.question, ddItems);
+        const keys = await mapQuestionToDD(q.question, ddFor(verticalOf(byDeal[q.deal_id], q.deal_id)));
         await db.from("deal_questions").update({ dd_item_keys: keys, dd_mapped_at: now }).eq("id", q.id);
         await db.from("inbound_items").update({ dd_item_keys: keys.length ? keys : null }).eq("deal_question_id", q.id);
         await noteAsk(byDeal[q.deal_id]?.id, keys, q.created_at);
