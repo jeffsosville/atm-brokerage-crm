@@ -4,18 +4,20 @@ import { useAuth } from "../../lib/auth";
 import LoginPage from "../../components/LoginPage";
 import { authFetch } from "../../lib/authFetch";
 import { C, ScoreBar, btn, money, page } from "../../components/ddUi";
+import { useVertical, VerticalSelect } from "../../lib/vertical";
 
 export default function DDQueue() {
-  const { user, loading } = useAuth();
+  const { user, loading, profile } = useAuth();
   const [status, setStatus] = useState("active");
+  const [vertical, setVertical, locked] = useVertical(profile);
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
 
   useEffect(() => {
     if (!user) return;
     setRows(null);
-    authFetch("/api/admin/dd?status=" + status).then(d => setRows(d.routes)).catch(e => setErr(e.message));
-  }, [user, status]);
+    authFetch(`/api/admin/dd?status=${status}&vertical=${vertical}`).then(d => setRows(d.routes)).catch(e => setErr(e.message));
+  }, [user, status, vertical]);
 
   if (loading) return <div style={{ ...page, padding: 40, color: C.faint }}>Loading...</div>;
   if (!user) return <LoginPage />;
@@ -34,6 +36,7 @@ export default function DDQueue() {
       <div style={{ background: C.panel, borderBottom: "1px solid " + C.line, padding: "16px 24px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <a href="/" style={{ color: C.faint, textDecoration: "none", fontSize: 13 }}>← CRM</a>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Due Diligence <span style={{ color: C.blue, fontWeight: 400 }}>Queue</span></h1>
+        <VerticalSelect value={vertical} onChange={setVertical} locked={locked} />
         <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
           {["active", "pending", "all"].map(s => (
             <button key={s} onClick={() => setStatus(s)} style={btn(status === s)}>{s[0].toUpperCase() + s.slice(1)}</button>

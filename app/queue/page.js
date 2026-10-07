@@ -4,6 +4,7 @@ import { useAuth } from "../../lib/auth";
 import LoginPage from "../../components/LoginPage";
 import { authFetch } from "../../lib/authFetch";
 import { C, btn, page } from "../../components/ddUi";
+import { useVertical, VerticalSelect, VerticalBadge } from "../../lib/vertical";
 
 const KIND = {
   offer: ["Offer", "#f87171"], seller_lead: ["Seller lead", "#fb923c"], data_room: ["Data room", "#c084fc"],
@@ -11,7 +12,7 @@ const KIND = {
   marketplace_lead: ["Marketplace lead", "#22d3ee"], vendor: ["Vendor", "#64748b"], internal: ["Internal", "#64748b"],
   automated: ["Automated", "#64748b"], spam: ["Spam", "#64748b"], other: ["Other", "#94a3b8"],
 };
-const SRC = { website_form: "Website form", email: "Email", marketplace: "BizBuySell", deal_room: "Deal room", listing: "Listing page", nda: "NDA" };
+const SRC = { website_form: "Website form", email: "Email", marketplace: "BizBuySell", deal_room: "Deal room", listing: "Listing page", nda: "NDA", drift_chat: "Website chat", cold_call: "Cold call" };
 
 function ago(iso) {
   const m = Math.round((Date.now() - new Date(iso)) / 60000);
@@ -64,13 +65,15 @@ function Draft({ i, onRedraft, busy }) {
 }
 
 export default function Queue() {
-  const { user, loading } = useAuth();
+  const { user, loading, profile } = useAuth();
   const [view, setView] = useState("open");
+  const [vertical, setVertical, locked] = useVertical(profile);
+  const [owner, setOwner] = useState("all");
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
   const [drafting, setDrafting] = useState(null);
 
-  const load = useCallback(() => authFetch("/api/admin/inbound?view=" + view).then(setD).catch((e) => setErr(e.message)), [view]);
+  const load = useCallback(() => authFetch(`/api/admin/inbound?view=${view}&vertical=${vertical}&owner=${owner}`).then(setD).catch((e) => setErr(e.message)), [view, vertical, owner]);
   useEffect(() => { if (user) { setD(null); load(); } }, [user, load]);
 
   const act = async (id, body) => {
@@ -95,6 +98,10 @@ export default function Queue() {
       <div style={{ background: C.panel, borderBottom: "1px solid " + C.line, padding: "16px 24px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <a href="/" style={{ color: C.faint, textDecoration: "none", fontSize: 13 }}>← CRM</a>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Inbound <span style={{ color: C.blue, fontWeight: 400 }}>Queue</span></h1>
+        <VerticalSelect value={vertical} onChange={setVertical} locked={locked} />
+        <select value={owner} onChange={(e) => setOwner(e.target.value)} style={{ ...btn(false), padding: "7px 10px" }} title="Owner">
+          <option value="all">Everyone</option><option value="jeff">Jeff</option><option value="john">John</option>
+        </select>
         {counts.high > 0 && <span style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{counts.high} high priority</span>}
         <div style={{ display: "flex", gap: 4, marginLeft: "auto", flexWrap: "wrap" }}>
           {tabs.map(([k, l]) => <button key={k} onClick={() => setView(k)} style={btn(view === k)}>{l}</button>)}
@@ -112,10 +119,12 @@ export default function Queue() {
           return (
             <div key={i.id} style={{ background: C.card, border: "1px solid " + (i.priority === "high" ? "#7f1d1d" : C.line), borderRadius: 8, padding: "12px 16px", marginBottom: 8 }}>
               <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+                {vertical === "all" && <VerticalBadge slug={i.vertical || "atm"} />}
                 <span style={{ color: kc, fontWeight: 700 }}>{kl}</span>
                 <span style={{ color: C.faint }}>{SRC[i.source] || i.source}</span>
                 {i.is_nda_signer && <span style={{ color: "#c084fc" }}>NDA signed</span>}
                 {i.priority === "high" && <span style={{ color: "#f87171", fontWeight: 700 }}>HIGH</span>}
+                {i.owner && <span style={{ color: C.faint }}>· {i.owner}</span>}
                 <span style={{ color: C.faint }}>{ago(i.last_message_at)} ago</span>
                 {due && <span style={{ color: due.c, fontWeight: 700 }}>{due.t}</span>}
                 {i.route && <a href={"/dd/" + i.route.slug} style={{ color: C.blue, textDecoration: "none" }}>{i.route.title}</a>}

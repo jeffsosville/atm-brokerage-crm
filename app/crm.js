@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../lib/auth";
 import { supabase as sbClient } from "../lib/supabase";
 import DealRoomPanel from "../components/DealRoomPanel";
+import PeoplePanel from "../components/PeoplePanel";
+import { useVertical, VerticalSelect, vMeta, dealSlug } from "../lib/vertical";
 
 const SB = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
 const SK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indncm14aHhvem95dmNtdmJmdXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzI5MTUsImV4cCI6MjA3NDQwODkxNX0.zuOIlNRTC3kjBWHxp9_sef2V9pe9erDSljEcJ2EL9to";
@@ -239,7 +241,7 @@ function DealDetail({ deal, onClose, onUpdate, onDelete }) {
   );
 }
 
-function Pipeline() {
+function Pipeline({ vertical = "all" }) {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -248,10 +250,10 @@ function Pipeline() {
     setLoading(true);
     try {
       const data = await api("atm_deals?select=*&order=updated_at.desc");
-      setDeals(data);
+      setDeals(vertical === "all" ? data : data.filter(d => dealSlug(d) === vertical));
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, []);
+  }, [vertical]);
 
   useEffect(() => { loadDeals(); }, [loadDeals]);
 
@@ -758,8 +760,11 @@ export default function CRM() {
   const [segFilter, setSegFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [followFilter, setFollowFilter] = useState("all");
-  const [verticalFilter, setVerticalFilter] = useState("all");
   const { profile } = useAuth();
+  const [vertical, setVertical, verticalLocked] = useVertical(profile);
+  // Companies is the ATM operator directory; other brands have no company list yet
+  const companyEnum = vertical === "all" ? null : vMeta(vertical).companyEnum;
+  const companiesForBrand = vertical === "all" || vertical === "atm";
   const [hasEmail, setHasEmail] = useState(false);
   const [hasPhone, setHasPhone] = useState(false);
   const [sortBy, setSortBy] = useState("atm_count");
@@ -800,6 +805,7 @@ export default function CRM() {
   }, []);
 
   const load = useCallback(async () => {
+    if (!companiesForBrand) { setCompanies([]); setTotal(0); setLoading(false); return; }
     setLoading(true);
     try {
       let q = "atm_companies_enriched?select=*&order=" + (sortBy === "atm_count" ? "estimated_atm_count.desc.nullslast" : sortBy === "name" ? "company_name.asc" : sortBy === "city" ? "city.asc.nullslast" : sortBy === "followup" ? "next_followup_at.asc.nullslast" : sortBy === "emails" ? "email_count.desc.nullslast" : "updated_at.desc") + "&offset=" + (page * PS) + "&limit=" + PS;
@@ -817,7 +823,7 @@ export default function CRM() {
       const data = await api(q);
       setCompanies(data);
       let cq = "atm_companies?select=count&category=not.in.(dead_url,bank,not_atm,dead_url_maybe_atm)";
-      if (verticalFilter !== "all") { q += "&vertical=eq." + verticalFilter; cq += "&vertical=eq." + verticalFilter; } else if (profile?.role === "broker" && profile?.assigned_vertical) { q += "&vertical=eq." + profile.assigned_vertical; cq += "&vertical=eq." + profile.assigned_vertical; }
+      if (companyEnum) cq += "&vertical=eq." + companyEnum;
       if (catFilter !== "all") cq += "&category=eq." + catFilter;
       if (segFilter !== "all") cq += "&segment=eq." + segFilter;
       if (statusFilter !== "all") cq += "&status=eq." + statusFilter;
@@ -833,7 +839,7 @@ export default function CRM() {
       if (rng) setTotal(parseInt(rng.split("/")[1]) || 0);
     } catch (e) { console.error("Load error:", e); }
     setLoading(false);
-  }, [page, catFilter, segFilter, statusFilter, followFilter, hasEmail, hasPhone, search, sortBy]);
+  }, [page, catFilter, segFilter, statusFilter, followFilter, hasEmail, hasPhone, search, sortBy, companiesForBrand, companyEnum]);
 
   useEffect(() => { if (view === "crm") load(); }, [load, view]);
   useEffect(() => { setPage(0); }, [catFilter, segFilter, statusFilter, followFilter, hasEmail, hasPhone, search, sortBy]);
@@ -984,9 +990,11 @@ export default function CRM() {
       <div style={{ background: "#0f1219", borderBottom: "1px solid #1e293b", padding: "16px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.5px" }}>ATM Brokerage <span style={{ color: "#3b82f6", fontWeight: 400 }}>CRM</span></h1>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.5px" }}>Sosville <span style={{ color: "#3b82f6", fontWeight: 400 }}>CRM</span></h1>
+            <VerticalSelect value={vertical} onChange={(v) => { setVertical(v); setSelected(null); setPage(0); }} locked={verticalLocked} />
             <div style={{ display: "flex", gap: 4 }}>
               <button onClick={() => { setView("crm"); setSelected(null); }} style={tabStyle(view === "crm")}>Companies</button>
+              <button onClick={() => { setView("people"); setSelected(null); }} style={tabStyle(view === "people")}>👥 People</button>
               <button onClick={() => window.location.href="/inbox"} style={tabStyle(false)}>Inbox</button>
               <button onClick={() => { setView("pipeline"); setSelected(null); }} style={tabStyle(view === "pipeline")}>Pipeline</button>
               <button onClick={() => { setView("dealroom"); setSelected(null); }} style={tabStyle(view === "dealroom")}>🤖 Deal Room</button>
@@ -1065,11 +1073,6 @@ export default function CRM() {
             </div>
           )}
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            {profile?.role === "super_user" ? (
-              <select value={verticalFilter} onChange={e => setVerticalFilter(e.target.value)} style={ss}><option value="all">All Verticals</option><option value="ATM">ATM</option><option value="Cleaning">Cleaning</option><option value="Vending">Vending</option><option value="HVAC">HVAC</option><option value="Pest">Pest</option><option value="Landscaping">Landscaping</option></select>
-            ) : (
-              <span style={{ ...ss, opacity: 0.6 }}>{profile?.assigned_vertical || "ATM"}</span>
-            )}
             <select value={catFilter} onChange={e => setCatFilter(e.target.value)} style={ss}><option value="all">All Categories</option>{CATS.filter(c => c !== "all").map(c => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}</select>
             <select value={segFilter} onChange={e => setSegFilter(e.target.value)} style={ss}><option value="all">All Segments</option>{SEGS.filter(s => s !== "all").map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}</select>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={ss}><option value="all">All Statuses</option>{STATUSES.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}</select>
@@ -1083,7 +1086,12 @@ export default function CRM() {
       </div>
 
       {/* Content */}
-      {view === "dealroom" ? <DealRoomPanel /> : view === "pipeline" ? <Pipeline /> : (
+      {view === "dealroom" ? <DealRoomPanel /> : view === "pipeline" ? <Pipeline vertical={vertical} /> : view === "people" ? <PeoplePanel vertical={vertical} /> : !companiesForBrand ? (
+        <div style={{ padding: 48, textAlign: "center", color: "#64748b", fontSize: 14, lineHeight: 1.7 }}>
+          Companies is the ATM operator directory, so there's nothing here for {vMeta(vertical).label} yet.<br />
+          {vMeta(vertical).label} sellers, buyers and NDA signers are under <a onClick={() => setView("people")} style={{ color: "#60a5fa", cursor: "pointer" }}>👥 People</a>; new leads are in <a href="/queue" style={{ color: "#60a5fa" }}>📥 Inbound</a>.
+        </div>
+      ) : (
         <div style={{ overflowX: "auto", marginRight: selected ? 460 : 0, transition: "margin 0.2s" }}>
           {loading ? <div style={{ padding: 40, textAlign: "center", color: "#475569", fontSize: 14 }}>Loading...</div> : (<>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>

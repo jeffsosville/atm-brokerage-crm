@@ -1,5 +1,6 @@
 import { adminDb as db, getUser, unauthorized } from "../../../../lib/serverAuth";
 import { draftAndSave } from "../../../../lib/inbox/draft";
+import { verticalFromRequest, verticalMaps } from "../../../../lib/verticalServer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -7,13 +8,19 @@ const OPEN = ["new", "drafted", "awaiting_john"];
 const STATUSES = ["new", "drafted", "awaiting_john", "awaiting_nda", "replied", "closed", "not_a_lead"];
 const CHASE = [...OPEN, "awaiting_nda"]; // things someone may need to act on
 
-// GET /api/admin/inbound?view=open|overdue|nda|done|filtered
+// GET /api/admin/inbound?view=open|overdue|nda|done|filtered&vertical=all|atm|vending|cleaning&owner=all|jeff|john
 export async function GET(request) {
   if (!(await getUser(request))) return unauthorized();
-  const view = new URL(request.url).searchParams.get("view") || "open";
+  const params = new URL(request.url).searchParams;
+  const view = params.get("view") || "open";
+  const owner = (params.get("owner") || "all").toLowerCase();
+  const vert = await verticalFromRequest(request);
+  const { slugById } = await verticalMaps();
   const nowIso = new Date().toISOString();
+  // Same brand/owner scope for the list and every count
+  const scope = (x) => { if (vert) x = x.eq("vertical_id", vert.id); if (owner !== "all") x = x.eq("owner", owner); return x; };
 
-  let q = db.from("inbound_items").select("*").limit(300);
+  let q = scope(db.from("inbound_items").select("*").limit(300));
   if (view === "open") q = q.in("status", OPEN).order("due_at", { ascending: true, nullsFirst: false });
   else if (view === "overdue") q = q.in("status", CHASE).lt("due_at", nowIso).order("due_at", { ascending: true });
   else if (view === "nda") q = q.eq("status", "awaiting_nda").order("auto_replied_at", { ascending: false });
@@ -27,14 +34,14 @@ export async function GET(request) {
   const rmap = Object.fromEntries((routes || []).map((r) => [r.id, r]));
 
   const [{ count: openN }, { count: overdueN }, { count: highN }, { count: ndaN }] = await Promise.all([
-    db.from("inbound_items").select("id", { count: "exact", head: true }).in("status", OPEN),
-    db.from("inbound_items").select("id", { count: "exact", head: true }).in("status", CHASE).lt("due_at", nowIso),
-    db.from("inbound_items").select("id", { count: "exact", head: true }).in("status", OPEN).eq("priority", "high"),
-    db.from("inbound_items").select("id", { count: "exact", head: true }).eq("status", "awaiting_nda"),
+    scope(db.from("inbound_items").select("id", { count: "exact", head: true }).in("status", OPEN)),
+    scope(db.from("inbound_items").select("id", { count: "exact", head: true }).in("status", CHASE).lt("due_at", nowIso)),
+    scope(db.from("inbound_items").select("id", { count: "exact", head: true }).in("status", OPEN).eq("priority", "high")),
+    scope(db.from("inbound_items").select("id", { count: "exact", head: true }).eq("status", "awaiting_nda")),
   ]);
 
   return Response.json({
-    items: items.map((i) => ({ ...i, route: rmap[i.route_id] || null })),
+    items: items.map((i) => ({ ...i, route: rmap[i.route_id] || null, vertical: slugById[i.vertical_id] || null })),
     counts: { open: openN || 0, overdue: overdueN || 0, high: highN || 0, nda: ndaN || 0 },
   });
 }
