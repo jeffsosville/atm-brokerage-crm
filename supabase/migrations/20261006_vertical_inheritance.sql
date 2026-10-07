@@ -29,7 +29,7 @@ create or replace function public.deal_cascade_vertical() returns trigger langua
 begin
   if new.vertical_id is distinct from old.vertical_id then
     update public.atm_routes  set vertical_id = new.vertical_id where deal_id = new.id and vertical_id is distinct from new.vertical_id;
-    update public.deal_tokens set vertical_id = new.vertical_id where deal_id = new.id and vertical_id is distinct from new.vertical_id;
+    update public.deal_tokens set vertical_id = new.vertical_id where deal_id = new.id::text and vertical_id is distinct from new.vertical_id;
   end if;
   return null;
 end $$;
@@ -41,7 +41,7 @@ create or replace function public.inherit_vertical_from_deal() returns trigger l
 declare v uuid;
 begin
   if new.deal_id is not null and (tg_op = 'INSERT' or new.deal_id is distinct from old.deal_id or new.vertical_id is null) then
-    select vertical_id into v from public.atm_deals where id = new.deal_id;
+    select vertical_id into v from public.atm_deals where id::text = new.deal_id::text;  -- deal_tokens.deal_id is text
     if v is not null then new.vertical_id := v; end if;
   end if;
   return new;
@@ -120,7 +120,7 @@ create trigger trg_mirror_token_to_nda after insert or update of vertical_id on 
 update public.atm_deals d set vertical_id = v.id
   from public.verticals v where v.slug = lower(d.deal_type) and d.vertical_id is distinct from v.id;
 update public.deal_tokens t set vertical_id = d.vertical_id
-  from public.atm_deals d where d.id = t.deal_id and t.vertical_id is distinct from d.vertical_id;
+  from public.atm_deals d where d.id::text = t.deal_id and t.vertical_id is distinct from d.vertical_id;
 update public.atm_routes r set vertical_id = d.vertical_id
   from public.atm_deals d where d.id = r.deal_id and r.vertical_id is distinct from d.vertical_id;
 update public.nda_signatures set listing_url = listing_url where vertical_id is null;  -- fires the vertical trigger
