@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { DEAL_HUB } from "../../../../lib/dealHub";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co",
@@ -36,7 +37,7 @@ export async function POST(request) {
       return Response.json({ success: true, sent: 0, note: "No responders configured" });
     }
 
-    const baseUrl = process.env.DEAL_HUB_URL || "https://atm-brokerage-crm.vercel.app";
+    const baseUrl = DEAL_HUB;
     let sent = 0;
 
     for (const responder of responders) {

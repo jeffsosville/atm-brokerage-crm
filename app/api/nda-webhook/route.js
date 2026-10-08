@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { DEAL_HUB } from "../../../lib/dealHub";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -108,7 +109,7 @@ export async function POST(request) {
       created_at:     new Date().toISOString(),
     });
 
-    const dealHubUrl = `${APP_URL}/deals/${token}`;
+    const dealHubUrl = `${DEAL_HUB}/deals/${token}`;
 
     // Send Deal Hub email via Resend
     if (RESEND_KEY && buyerEmail) {

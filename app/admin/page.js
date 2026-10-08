@@ -1,10 +1,11 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { DEAL_HUB } from "../../lib/dealHub";
 
 const SB = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
 const SK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indncm14aHhvem95dmNtdmJmdXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzI5MTUsImV4cCI6MjA3NDQwODkxNX0.zuOIlNRTC3kjBWHxp9_sef2V9pe9erDSljEcJ2EL9to";
 const api = async (p, o = {}) => { const r = await fetch(SB + "/rest/v1/" + p, { headers: { apikey: SK, Authorization: "Bearer " + SK, "Content-Type": "application/json", ...o.headers }, ...o }); return r.json(); };
-const APP = typeof window !== "undefined" ? window.location.origin : "";
+const APP = DEAL_HUB; // buyer links always use the shared deal-room address
 
 export default function Admin() {
   const [authed, setAuthed] = useState(false);
