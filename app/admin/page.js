@@ -19,6 +19,8 @@ export default function Admin() {
   const [loading, setLoading] = useState("");
   const [msg, setMsg] = useState("");
   const [tab, setTab] = useState("deals");
+  const [showArchived, setShowArchived] = useState(false);
+  const ARCHIVED = ["closed", "dead_deal"];
   const [nd, setNd] = useState({ deal_name: "", atm_count: "", asking_price: "", route_state: "", route_cities: "", stage: "prospect" });
   const [editing, setEditing] = useState(false);
   const [ed, setEd] = useState({ deal_name: "", atm_count: "", asking_price: "", route_state: "", route_cities: "", stage: "prospect" });
@@ -230,9 +232,14 @@ export default function Admin() {
         {tab === "deals" && (
           <div style={{ display: "grid", gridTemplateColumns: sel ? "300px 1fr" : "1fr", gap: 16 }}>
             <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: 16 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Deals ({deals.length})</h3>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{showArchived ? "Archived deals" : "Active deals"} ({deals.filter(d => showArchived === ARCHIVED.includes(d.stage)).length})</h3>
+                <button onClick={() => setShowArchived(!showArchived)} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: 12, cursor: "pointer", padding: 0 }}>
+                  {showArchived ? "← Active deals" : "Archived (" + deals.filter(d => ARCHIVED.includes(d.stage)).length + ") →"}
+                </button>
+              </div>
               <div style={{ maxHeight: 600, overflow: "auto" }}>
-                {deals.map(d => (
+                {deals.filter(d => showArchived === ARCHIVED.includes(d.stage)).map(d => (
                   <div key={d.id} onClick={() => pick(d)} style={{ padding: "10px 12px", borderBottom: "1px solid #1e293b", cursor: "pointer", background: sel?.id === d.id ? "#1e293b" : "transparent", borderRadius: 4 }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{d.deal_name || "Unnamed"}</div>
                     <div style={{ fontSize: 11, color: "#64748b" }}>{d.dl_number} · {d.route_cities || ""} {d.route_state || ""} · {d.asking_price ? "$" + Number(d.asking_price).toLocaleString() : ""} · {d.stage}</div>
@@ -246,6 +253,16 @@ export default function Admin() {
                 <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: 16 }}>
                   <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, display: "inline" }}>{sel.deal_name}</h3>
                   <button onClick={openEdit} style={{ marginLeft: 12, background: "#1e293b", color: "#60a5fa", border: "1px solid #2563eb", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Edit</button>
+                  <button onClick={async () => {
+                    const archiving = !ARCHIVED.includes(sel.stage);
+                    if (archiving && !confirm("Archive " + sel.deal_name + "?\n\nMarks it closed and its route sold. Documents, buyers and history stay; it just moves to the Archived list.")) return;
+                    const r = await fetch("/api/admin/deal", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, stage: archiving ? "closed" : "listed" }) }).then(x => x.json());
+                    if (r.error) { setMsg("Error: " + r.error); return; }
+                    setMsg(archiving ? "Archived." : "Restored to active (stage: listed).");
+                    if (r[0]) setSel(r[0]);
+                    setShowArchived(archiving);
+                    loadDeals();
+                  }} style={{ marginLeft: 8, background: "#1e293b", color: "#fbbf24", border: "1px solid #78350f", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>{ARCHIVED.includes(sel.stage) ? "Unarchive" : "Archive"}</button>
                   <button onClick={async () => { if (!confirm("Delete " + sel.deal_name + "?")) return; if (!confirm("Are you sure? This deletes ALL documents, tokens, and embeddings. Cannot be undone.")) return; await fetch("/api/admin/deal?dealId=" + sel.id, { method: "DELETE" }); setSel(null); loadDeals(); setMsg("Deal deleted."); }} style={{ marginLeft: 8, background: "#1e293b", color: "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Delete Deal</button>
                   <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{sel.dl_number} · {sel.route_cities || ""} {sel.route_state || ""} · {sel.atm_count || "?"} ATMs · ${sel.asking_price ? Number(sel.asking_price).toLocaleString() : "TBD"} · {sel.stage}</div>
 

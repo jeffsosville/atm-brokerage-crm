@@ -36,12 +36,24 @@ export async function PATCH(request) {
       return Response.json({ error: "No editable fields provided" }, { status: 400 });
     }
 
+    // Archiving = closing: stamp the close date and take the route off the active lists
+    // (DD queue, inbox matching, website sync) without deleting anything.
+    if (updates.stage === "closed") {
+      const { data: cur } = await supabase.from("atm_deals").select("closed_at").eq("id", dealId).maybeSingle();
+      if (cur && !cur.closed_at) updates.closed_at = new Date().toISOString();
+    }
+
     const { data, error } = await supabase
       .from("atm_deals")
       .update(updates)
       .eq("id", dealId)
       .select();
     if (error) return Response.json({ error: error.message }, { status: 500 });
+
+    if (updates.stage === "closed" || updates.stage === "dead_deal") {
+      await supabase.from("atm_routes").update({ status: updates.stage === "closed" ? "sold" : "hidden" })
+        .eq("deal_id", dealId).in("status", ["active", "pending"]);
+    }
     return Response.json(data);
   } catch (err) { return Response.json({ error: err.message }, { status: 500 }); }
 }
