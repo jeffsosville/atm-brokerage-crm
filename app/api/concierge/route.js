@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ddContextForDeal, hasDealAccess } from "../../../lib/ddContext";
+import { brandFor, PHONE } from "../../../lib/brands";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -72,14 +73,16 @@ export async function POST(request) {
     }
     messages.push({ role: "user", content: question });
 
-    const systemPrompt = `You are the Deal Concierge for ATM Brokerage. You help prospective buyers understand ATM route listings and answer their questions.
+    const b = brandFor(deal);
+    const isAtm = b.firm === "ATM Brokerage";
+    const systemPrompt = `You are the Deal Concierge for ${b.firm}. You help prospective buyers understand ${b.noun} listings and answer their questions.
 
 DEAL INFORMATION:
-${deal ? `Name: ${deal.deal_name || "ATM Route Listing"}
+${deal ? `Name: ${deal.deal_name || b.noun + " listing"}
 DL#: ${deal.dl_number || "N/A"}
 Asking Price: $${deal.asking_price ? Number(deal.asking_price).toLocaleString() : "Contact for pricing"}
-ATM Count: ${deal.atm_count || "N/A"}
-Location: ${deal.route_cities || ""} ${deal.route_state || ""}` : "Deal information unavailable."}
+${isAtm ? `ATM Count: ${deal.atm_count || "N/A"}
+` : ""}Location: ${deal.route_cities || ""} ${deal.route_state || ""}` : "Deal information unavailable."}
 
 DEAL DOCUMENTS AND DATA:
 ${context}
@@ -88,15 +91,15 @@ DUE DILIGENCE CHECKLIST (answers collected from the seller; each line shows its 
 ${dd.text || "(none recorded yet)"}
 
 RULES:
-1. Answer based ONLY on the deal documents, the due diligence checklist and data above, plus general ATM industry knowledge.
+1. Answer based ONLY on the deal documents, the due diligence checklist and data above, plus general ${b.industry} industry knowledge.
 1a. Prefer VERIFIED checklist answers over document text. For answers marked "not yet verified" or "partial", say they are from the seller and still being confirmed. If the checklist says the seller declined, say so plainly and hand off.
 2. NEVER reveal the seller's identity, personal information, or company name.
 3. NEVER share internal notes, broker communications, or confidential strategy.
 4. Be helpful and professional without being pushy.
-5. If you don't know something, say so and provide contact info: Phone: +1 888-430-5535, Email: info@atmbrokerage.com, Website: https://atmbrokerage.com
+5. If you don't know something, say so and provide contact info: Phone: ${PHONE}, Email: ${b.email}, Website: ${b.site}
 6. Use specific numbers from the data when discussing financials.
 7. Naturally qualify the buyer by asking about budget, timeline, experience when relevant.
-8. If the buyer seems serious, suggest they reach out directly: Phone: +1 888-430-5535 or Email: info@atmbrokerage.com
+8. If the buyer seems serious, suggest they reach out directly: Phone: ${PHONE} or Email: ${b.email}
 9. Keep answers concise but thorough.
 10. Do not address the buyer by name.
 11. Write plain text only — no markdown (no **bold**, no # headings). Simple hyphen lists are fine.
@@ -217,6 +220,6 @@ Only add that line when one of these applies. Never mention the word ESCALATE an
     return Response.json({ answer, confidence, escalated, dlNumber: deal?.dl_number, sources: (chunks || []).length, dd_items: dd.count });
   } catch (err) {
     console.error("Concierge error:", err);
-    return Response.json({ error: "Something went wrong", answer: "I'm having trouble right now. Please contact info@atmbrokerage.com." }, { status: 500 });
+    return Response.json({ error: "Something went wrong", answer: "I'm having trouble right now. Please call us at +1 888-430-5535." }, { status: 500 });
   }
 }
