@@ -1,5 +1,6 @@
 import { adminDb as db } from "../../../../lib/serverAuth";
 import { buildFollowupDay1, buildFollowupDay2, buildFollowupDay3 } from "../../../../lib/followupEmails";
+import { DEAL_HUB } from "../../../../lib/dealHub";
 
 // Hourly NDA follow-up drip for every vertical (ATM, VendingExits, CleaningExits).
 // Moved here from atmbrokerage-next so it survives that site being shut down.
@@ -9,8 +10,7 @@ import { buildFollowupDay1, buildFollowupDay2, buildFollowupDay3 } from "../../.
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://atm-brokerage-crm.vercel.app";
-const DEAL_HUB = process.env.DEAL_HUB_URL || APP_URL;
+const APP_URL = DEAL_HUB; // unsubscribe links are buyer-facing too
 const RESEND_KEY = process.env.RESEND_API_KEY;
 
 const SENDERS = {
