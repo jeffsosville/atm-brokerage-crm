@@ -104,7 +104,7 @@ async function run() {
     const sender = (e.from_email || "").toLowerCase();
     const nda = ndaBy[sender];
     // A deal number in the email (DL-2026-ATM-00054) is the surest match
-    const dlNum = ((e.subject || "") + " " + (e.snippet || "")).match(/DL-\d{4}-ATM-\d{5}/i)?.[0]?.toUpperCase();
+    const dlNum = ((e.subject || "") + " " + (e.snippet || "")).match(/DL-\d{4}-(?:ATM|VND|CLN|PST)-\d{5}/i)?.[0]?.toUpperCase();
     const dlRoute = dlNum ? routes.find((r) => r.dl_number === dlNum) : null;
     const route = dlRoute || (c.route_slug && bySlug[c.route_slug]) || (nda && byDeal[nda.deal_id]) || null;
     const actionable = !NON_ACTIONABLE.includes(c.kind);

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
+import { brandFor } from "../../../lib/brands";
 
 const SUPABASE_URL = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indncm14aHhvem95dmNtdmJmdXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzI5MTUsImV4cCI6MjA3NDQwODkxNX0.zuOIlNRTC3kjBWHxp9_sef2V9pe9erDSljEcJ2EL9to";
@@ -39,6 +40,7 @@ export default function DealHub() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const scrollRef = useRef(null);
+  const brand = brandFor(deal);
 
   useEffect(() => {
     if (!token) return;
@@ -68,7 +70,7 @@ export default function DealHub() {
           const buyerInfo = { name: t.buyer_name || "", email: t.buyer_email || "", phone: t.buyer_phone || "" };
           setBuyer(buyerInfo);
           setGateComplete(true);
-          setMessages([{ role: "assistant", content: "Hi! I'm the Deal Concierge for " + (deals[0]?.deal_name || "this ATM route") + ". What would you like to know?" }]);
+          setMessages([{ role: "assistant", content: "Hi! I'm the Deal Concierge for " + (deals[0]?.deal_name || "this " + brandFor(deals[0]).noun) + ". What would you like to know?" }]);
         }
 
         setValid(true);
@@ -130,7 +132,7 @@ export default function DealHub() {
       const buyerInfo = { name: gateInput.name.trim(), email: gateInput.email.trim(), phone: gateInput.phone.trim() };
       setBuyer(buyerInfo);
       setGateComplete(true);
-      setMessages([{ role: "assistant", content: "Hi! I'm the Deal Concierge for " + (deal?.deal_name || "this ATM route") + (deal?.dl_number ? " (" + deal.dl_number + ")" : "") + ". I can answer questions about the financials, equipment, operations, and help you understand if this route is right for you. What would you like to know?" }]);
+      setMessages([{ role: "assistant", content: "Hi! I'm the Deal Concierge for " + (deal?.deal_name || "this " + brand.noun) + (deal?.dl_number ? " (" + deal.dl_number + ")" : "") + ". I can answer questions about the financials, equipment, operations, and help you understand if this business is right for you. What would you like to know?" }]);
     } catch (e) {
       setGateError("Something went wrong. Please try again.");
     }
@@ -171,7 +173,7 @@ export default function DealHub() {
       // Refresh Q&A in case a new answer was ingested
       if (deal?.id) loadQA(deal.id);
     } catch (err) {
-      setMessages(function(p) { return [...p, { role: "assistant", content: "Sorry, I had trouble with that. Please try again or contact info@atmbrokerage.com." }]; });
+      setMessages(function(p) { return [...p, { role: "assistant", content: "Sorry, I had trouble with that. Please try again or contact " + brand.email + "." }]; });
     }
     setChatLoading(false);
   };
@@ -203,8 +205,8 @@ export default function DealHub() {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0f172a, #1e293b)", fontFamily: "system-ui" }}>
       <div style={{ background: "#fff", borderRadius: 16, padding: 40, maxWidth: 420, width: "100%", margin: "0 24px", boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <div style={{ fontSize: 12, color: "#3b82f6", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>ATM Brokerage · Confidential</div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a", margin: "0 0 8px" }}>{deal?.deal_name || "ATM Deal Room"}</h2>
+          <div style={{ fontSize: 12, color: brand.accent, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{brand.firm} · Confidential</div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a", margin: "0 0 8px" }}>{deal?.deal_name || "Deal Room"}</h2>
           <p style={{ color: "#64748b", fontSize: 14, margin: 0 }}>Please confirm your details to access the deal room and documents.</p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -235,8 +237,8 @@ export default function DealHub() {
       <div style={{ background: "linear-gradient(135deg, #0f172a, #1e293b)", padding: "24px 32px", color: "#fff" }}>
         <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
           <div>
-            <div style={{ fontSize: 12, color: "#60a5fa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>ATM Brokerage Deal Room</div>
-            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{deal?.deal_name || "ATM Route"}</h1>
+            <div style={{ fontSize: 12, color: "#60a5fa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>{brand.firm} Deal Room</div>
+            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{deal?.deal_name || brand.noun}</h1>
             {deal?.dl_number && <div style={{ color: "#94a3b8", fontSize: 13, marginTop: 4 }}>{deal.dl_number}</div>}
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -327,7 +329,7 @@ export default function DealHub() {
 
         <div style={{ textAlign: "center", padding: "32px 0", color: "#94a3b8", fontSize: 12 }}>
           <p>Confidential. All access logged.</p>
-          <p style={{ marginTop: 4 }}>ATM Brokerage · 200+ deals since 2012 · info@atmbrokerage.com</p>
+          <p style={{ marginTop: 4 }}>{brand.firm} · {brand.tagline} · {brand.email}</p>
         </div>
       </div>
 
@@ -336,7 +338,7 @@ export default function DealHub() {
           <div style={{ background: "linear-gradient(135deg, #0f172a, #1e293b)", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>Deal Concierge</div>
-              <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>{deal?.dl_number || "ATM Brokerage"}</div>
+              <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>{deal?.dl_number || brand.firm}</div>
             </div>
             <button onClick={function() { setChatOpen(false); }} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 8, cursor: "pointer", fontSize: 18 }}>✕</button>
           </div>
