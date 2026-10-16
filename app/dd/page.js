@@ -84,12 +84,18 @@ export default function DDQueue() {
                       <td style={{ ...td, color: r.open_flags ? "#fb923c" : C.faint }}>{r.open_flags}</td>
                       <td style={{ ...td, color: r.buyer_asks_open ? "#fb923c" : C.faint }} title={(r.asked_open_keys || []).join(", ")}>{r.buyer_asks_open || 0}{r.asked_open_keys?.length ? " · " + r.asked_open_keys.slice(0, 3).join(", ") : ""}</td>
                       <td style={{ ...td, fontSize: 12 }}>
+                        {r.seller_link_sent_at && (
+                          <div style={{ color: r.seller_submitted_at ? "#4ade80" : r.seller_link_opened_at ? "#60a5fa" : C.dim, marginBottom: 2 }}>
+                            Portal: {r.seller_submitted_at ? "seller sent it" : r.seller_link_opened_at ? "opened " + new Date(r.seller_last_seen_at || r.seller_link_opened_at).toLocaleDateString() : "sent, not opened"}
+                          </div>
+                        )}
+                        {r.n_coming_soon > 0 && <div style={{ color: "#fbbf24" }}>{r.n_coming_soon} coming soon{r.n_coming_overdue ? ` (${r.n_coming_overdue} late)` : ""}</div>}
                         {r.touches ? (
                           <>
                             <div>{r.touches} touch{r.touches > 1 ? "es" : ""}{r.unanswered_touches ? ", " + r.unanswered_touches + " unanswered" : ""}</div>
                             {r.next_touch_due && <div style={{ color: overdue ? "#facc15" : C.faint }}>Next: {r.next_touch_channel.replace("_", " ")} {new Date(r.next_touch_due).toLocaleDateString()}</div>}
                           </>
-                        ) : <span style={{ color: C.faint }}>Not contacted</span>}
+                        ) : !r.seller_link_sent_at && <span style={{ color: C.faint }}>Not contacted</span>}
                       </td>
                     </tr>
                   );
@@ -98,7 +104,7 @@ export default function DDQueue() {
             </table>
           </div>
         )}
-        <div style={{ fontSize: 11, color: C.faint, marginTop: 12 }}>Sorted by deal size and how often buyers ask about missing items. "Buyers asking" counts questions on items that are still open. Score counts verified/received answers fully and partial answers as half.</div>
+        <div style={{ fontSize: 11, color: C.faint, marginTop: 12 }}>Sorted by deal size and how often buyers ask about missing items. "Buyers asking" counts questions on items that are still open. Score counts verified/received answers fully, partial answers as half, "won\u2019t provide" as a third, and "coming soon" as zero until it arrives.</div>
       </div>
     </div>
   );

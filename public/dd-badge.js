@@ -21,7 +21,7 @@
     ".atmdd .v{color:#6b7280;font-size:12px}.atmdd .foot{font-size:12px;color:#6b7280;margin-top:12px}";
   var ST = {
     verified: ["✓ Verified", "#15803d"], provided: ["Provided", "#1d4ed8"], partial: ["Partial", "#b45309"],
-    requested: ["Requested", "#7c3aed"], pending: ["Pending", "#9ca3af"], not_provided: ["Not provided", "#6b7280"]
+    requested: ["Requested", "#7c3aed"], pending: ["Pending", "#9ca3af"], not_provided: ["Not provided", "#6b7280"], coming_soon: ["Coming soon", "#b45309"]
   };
   function esc(t) { var d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
   function render(el, d) {
