@@ -1,9 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import { userHeaders, userFetch } from "../lib/sbRest";
 
 const SB = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
-const SK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indncm14aHhvem95dmNtdmJmdXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzI5MTUsImV4cCI6MjA3NDQwODkxNX0.zuOIlNRTC3kjBWHxp9_sef2V9pe9erDSljEcJ2EL9to";
-const H = { apikey: SK, Authorization: `Bearer ${SK}`, "Content-Type": "application/json" };
 
 const URGENCY_COLOR = { high: "#ef4444", medium: "#f59e0b", low: "#3b82f6" };
 const STATUS_COLOR  = { pending_review: "#f59e0b", pushed_to_gmail: "#10b981", sent: "#22c55e" };
@@ -26,7 +25,7 @@ function DraftCard({ email, onPushed }) {
 
   async function saveDraft() {
     await fetch(SB + "/rest/v1/atm_activity_log?id=eq." + email.id, {
-      method: "PATCH", headers: H,
+      method: "PATCH", headers: await userHeaders(),
       body: JSON.stringify({ draft_reply: draft }),
     });
     setEditing(false);
@@ -37,7 +36,7 @@ function DraftCard({ email, onPushed }) {
   async function generateDraft() {
     setLoading(true); setMsg("Generating draft...");
     try {
-      const res = await fetch("/api/gmail/draft", {
+      const res = await userFetch("/api/gmail/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email_id: email.id }),
@@ -59,11 +58,11 @@ function DraftCard({ email, onPushed }) {
     try {
       // Save any edits first
       await fetch(SB + "/rest/v1/atm_activity_log?id=eq." + email.id, {
-        method: "PATCH", headers: H,
+        method: "PATCH", headers: await userHeaders(),
         body: JSON.stringify({ draft_reply: draft, draft_status: "pending_review" }),
       });
       // Trigger the Python push via API route
-      const res = await fetch("/api/gmail/push", {
+      const res = await userFetch("/api/gmail/push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email_id: email.id }),
@@ -185,7 +184,7 @@ export default function DealRoomPanel() {
     try {
       let url = SB + "/rest/v1/atm_activity_log?classification=eq.BUYER_INQUIRY&draft_reply=not.is.null&order=created_at.desc&limit=30";
       if (filter !== "all") url += "&draft_status=eq." + filter;
-      const res = await fetch(url, { headers: H });
+      const res = await fetch(url, { headers: await userHeaders() });
       const data = await res.json();
       setEmails(data || []);
     } catch (e) { console.error(e); }
@@ -197,7 +196,7 @@ export default function DealRoomPanel() {
   async function runClassifier() {
     setRunning(true); setMsg("Running classifier...");
     try {
-      const res = await fetch("/api/gmail/classify", {
+      const res = await userFetch("/api/gmail/classify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hours: 48 }),
@@ -214,7 +213,7 @@ export default function DealRoomPanel() {
 
   async function runDraftGenerator() {
     setMsg("Generating drafts...");
-    await fetch("/api/gmail/draft", {
+    await userFetch("/api/gmail/draft", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hours: 48 }),

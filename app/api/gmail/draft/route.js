@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
+import { requireStaff } from "../../../../lib/serverAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -116,6 +117,7 @@ Keep it under 150 words. Do not use bullet points. Write in plain conversational
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { email_id, hours = 24 } = await request.json().catch(() => ({}));
 
@@ -190,6 +192,7 @@ export async function POST(request) {
   }
 }
 
-export async function GET() {
+export async function GET(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   return Response.json({ message: 'POST with { email_id } or { hours: 24 } to generate drafts.' });
 }

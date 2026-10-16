@@ -1,11 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireStaff } from "../../../lib/serverAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-export async function GET() {
+export async function GET(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const { data, error } = await supabase
     .from("todos")
     .select("*")
@@ -18,6 +20,7 @@ export async function GET() {
 }
 
 export async function POST(req) {
+  if (!(await requireStaff(req))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   const { data, error } = await supabase
     .from("todos")

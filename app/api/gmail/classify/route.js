@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
+import { requireStaff } from "../../../../lib/serverAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -43,6 +44,7 @@ Respond with ONLY a JSON object, no markdown:
 }
 
 export async function POST(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { hours = 24, dry_run = false } = await request.json().catch(() => ({}));
     const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
@@ -98,6 +100,7 @@ export async function POST(request) {
   }
 }
 
-export async function GET() {
+export async function GET(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   return Response.json({ message: 'POST with { hours: 24, dry_run: true } to test.' });
 }

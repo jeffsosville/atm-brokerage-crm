@@ -3,16 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { brandFor } from "../../../lib/brands";
 
-const SUPABASE_URL = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indncm14aHhvem95dmNtdmJmdXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzI5MTUsImV4cCI6MjA3NDQwODkxNX0.zuOIlNRTC3kjBWHxp9_sef2V9pe9erDSljEcJ2EL9to";
+// All reads go through /api/deal-room/<token>, which checks the deal room link on the server.
 
-const api = async (path, opts = {}) => {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", ...opts.headers },
-    ...opts,
-  });
-  return r.json();
-};
 
 const fileIcon = (name) => {
   const ext = (name || "").split(".").pop().toLowerCase();
@@ -46,10 +38,10 @@ export default function DealHub() {
     if (!token) return;
     (async () => {
       try {
-        const tokens = await api("deal_tokens?token=eq." + token + "&select=*");
-        if (!tokens.length) { setValid(false); setError("Invalid or expired link."); return; }
-        const t = tokens[0];
-        if (new Date(t.expires_at) < new Date()) { setValid(false); setError("This link has expired."); return; }
+        const resp = await fetch("/api/deal-room/" + encodeURIComponent(token), { cache: "no-store" });
+        const room = await resp.json().catch(() => ({}));
+        if (!resp.ok) { setValid(false); setError(room.error || "Invalid or expired link."); return; }
+        const t = room.token;
 
         fetch("/api/deal-hub-view", {
           method: "POST",
@@ -57,14 +49,10 @@ export default function DealHub() {
           body: JSON.stringify({ token, token_id: t.id }),
         }).catch((err) => console.error("View tracker failed:", err));
 
-        const dealId = t.deal_id || t.listing_id;
-        const deals = await api("atm_deals?id=eq." + dealId + "&select=*");
+        const deals = room.deal ? [room.deal] : [];
         if (deals.length) setDeal(deals[0]);
-        const f = await api("listing_files?listing_id=eq." + dealId + "&is_active=eq.true&select=*&order=uploaded_at.desc");
-        setFiles(f || []);
-
-        // Load Q&A — questions with at least one answer for this deal
-        loadQA(dealId);
+        setFiles(room.files || []);
+        applyQA(room.qa || []);
 
         if (t.buyer_email) {
           const buyerInfo = { name: t.buyer_name || "", email: t.buyer_email || "", phone: t.buyer_phone || "" };
@@ -78,34 +66,19 @@ export default function DealHub() {
     })();
   }, [token]);
 
-  const loadQA = async (dealId) => {
+  const applyQA = (items) => {
+    setQaItems(items);
+    const defaultOpen = {};
+    items.slice(0, 3).forEach(q => { defaultOpen[q.id] = true; });
+    setOpenQa(defaultOpen);
+  };
+
+  const loadQA = async () => {
     try {
-      // Fetch answered questions for this deal
-      const answers = await api(
-        "deal_answers?deal_id=eq." + dealId +
-        "&is_deleted=eq.false&select=id,answered_by_name,answered_by_role,answer,answered_at,question_id" +
-        "&order=answered_at.asc"
-      );
-      if (!answers?.length) return;
-
-      // Get unique question ids
-      const qIds = [...new Set(answers.map(a => a.question_id))];
-      const questions = await api(
-        "deal_questions?id=in.(" + qIds.join(",") + ")&select=id,question"
-      );
-
-      // Group answers under questions
-      const qMap = {};
-      (questions || []).forEach(q => { qMap[q.id] = { ...q, answers: [] }; });
-      (answers || []).forEach(a => { if (qMap[a.question_id]) qMap[a.question_id].answers.push(a); });
-
-      const items = Object.values(qMap).filter(q => q.answers.length > 0);
-      setQaItems(items);
-
-      // Open first 3 by default
-      const defaultOpen = {};
-      items.slice(0, 3).forEach(q => { defaultOpen[q.id] = true; });
-      setOpenQa(defaultOpen);
+      const resp = await fetch("/api/deal-room/" + encodeURIComponent(token), { cache: "no-store" });
+      if (!resp.ok) return;
+      const room = await resp.json();
+      applyQA(room.qa || []);
     } catch (e) {
       console.error("Q&A load failed:", e);
     }
@@ -141,7 +114,7 @@ export default function DealHub() {
 
   const viewFile = async (file) => {
     try {
-      const resp = await fetch("/api/files?path=" + encodeURIComponent(file.storage_path));
+      const resp = await fetch("/api/files?id=" + encodeURIComponent(file.id) + "&token=" + encodeURIComponent(token));
       const data = await resp.json();
       if (data.url) window.open(data.url, "_blank");
       else alert("Could not get file URL");
@@ -171,7 +144,7 @@ export default function DealHub() {
       const data = await resp.json();
       setMessages(function(p) { return [...p, { role: "assistant", content: data.answer, escalated: data.escalated }]; });
       // Refresh Q&A in case a new answer was ingested
-      if (deal?.id) loadQA(deal.id);
+      loadQA();
     } catch (err) {
       setMessages(function(p) { return [...p, { role: "assistant", content: "Sorry, I had trouble with that. Please try again or contact " + brand.email + "." }]; });
     }

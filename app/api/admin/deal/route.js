@@ -1,10 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireStaff } from "../../../../lib/serverAuth";
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co",
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 export async function POST(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const body = await request.json();
     const { data, error } = await supabase.from("atm_deals").insert({
@@ -21,6 +23,7 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const body = await request.json();
     const { dealId, ...fields } = body;
@@ -59,6 +62,7 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { searchParams } = new URL(request.url);
     const dealId = searchParams.get("dealId");

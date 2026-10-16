@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireStaff } from "../../../../lib/serverAuth";
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co", process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 function chunkText(text, size = 300) {
@@ -11,6 +12,7 @@ function chunkText(text, size = 300) {
 }
 
 export async function POST(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { dealId, dlNumber, text, sourceType, sourceName } = await request.json();
     if (!dealId || !text) return Response.json({ error: "dealId and text required" }, { status: 400 });

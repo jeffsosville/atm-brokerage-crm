@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireStaff } from "../../../../lib/serverAuth";
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co", process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const FAQ = [
@@ -63,6 +64,7 @@ const FAQ = [
 ];
 
 export async function POST(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { dealId, dlNumber, global: isGlobal } = await request.json();
 

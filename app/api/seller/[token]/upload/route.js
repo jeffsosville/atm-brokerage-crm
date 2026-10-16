@@ -41,6 +41,8 @@ export async function POST(request, { params }) {
     const { error: dbError } = await db.from("listing_files").insert({
       listing_id: route.deal_id, file_name: fileName, file_type: body.file_type || null,
       file_size: Number(body.file_size) || null, storage_path: path, uploaded_by: "seller", is_active: true,
+      // Seller files are private: buyers never see them and the concierge never reads them until the broker shares the file.
+      buyer_visible: false,
     });
     if (dbError) return fail("Couldn't save the file record: " + dbError.message, 500);
 

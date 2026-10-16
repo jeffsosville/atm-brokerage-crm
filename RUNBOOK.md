@@ -251,3 +251,13 @@ All BizBuySell listings (any vertical) should send leads to info@, the one inbox
   - `nonatm` — CRM sends the vending/cleaning reply (brand sender, that listing's NDA link). The Apps Script must skip non-ATM headlines or buyers get two emails.
   - `all` — CRM answers every lead. Turn the Apps Script off first.
 - Replies are logged to `atm_activity_log` (`type = 'marketplace_autoreply'`) and the item moves to `awaiting_nda`; when the buyer signs (any site) it converts.
+
+## Security model (added Oct 2026)
+
+- **Database:** only signed-in CRM staff (`profiles.role` super_user or broker) can use the tables directly (`is_crm_staff()`, migration `20261017_lock_down_public_access.sql`). The public browser key gets nothing. CRM pages send the user's session via `lib/sbRest.js` (`userHeaders`, `userFetch`). `/admin`, `/inbox` and `/todos` require login.
+- **Buyers:** the deal room reads only through `/api/deal-room/<token>`; downloads through `/api/files?id=&token=`, which checks the file belongs to that deal, is active and `buyer_visible`. Storage paths never reach the browser.
+- **Sellers:** files a seller uploads are `buyer_visible = false`. Buyers can't see them and auto-ingest skips them until the broker clicks "Share with buyers" on /admin.
+- **Smart agent (`/api/concierge`):** needs a valid deal room link for that deal. Reads no `seller_notes`. Seller answers to deal room questions are not ingested until reviewed. Every reply is scanned (`lib/confidential.js`) for street addresses, PO boxes, SSNs, EINs, routing/account/card numbers; a hit replaces the reply with a hand-off and escalates to John.
+- **Email drafts:** same scan; a hit sets "Needs John" with a "CHECK BEFORE SENDING" note. The drafter is told John's past answers may contain NDA-only details.
+- **Admin API routes** (`/api/admin/*` except dd/people/inbound/daily-digest which already checked, `/api/broker/upload`, `/api/gmail/*`, `/api/todos`) require `requireStaff()`: a staff session, or header `x-internal-secret` = `INBOX_CRON_SECRET`/`CRON_SECRET` for server-to-server calls.
+- **Never put in a deal room:** location address lists, merchant names, tax returns, bank statements, W-9s. Share those directly after an accepted offer.
