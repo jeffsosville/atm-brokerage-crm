@@ -222,7 +222,7 @@ export async function PATCH(request, { params }) {
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: SELLER_SENDERS[vertical] || SELLER_SENDERS.atm, to: [route.seller_contact_email],
-        cc: [process.env.SELLER_PORTAL_NOTIFY || "john@atmbrokerage.com"], reply_to: "john@atmbrokerage.com",
+        cc: ["john@atmbrokerage.com"], reply_to: "john@atmbrokerage.com",
         subject: mail.subject, text: mail.text,
       }),
     });

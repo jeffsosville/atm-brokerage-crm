@@ -99,7 +99,7 @@ export async function POST(request, { params }) {
 async function notifyJohn({ req, route, brand, score }) {
   const key = process.env.RESEND_API_KEY;
   if (!key) return;
-  const to = process.env.SELLER_PORTAL_NOTIFY || "john@atmbrokerage.com";
+  const to = process.env.SELLER_PORTAL_NOTIFY || "info@atmbrokerage.com";
   const crm = (process.env.CRM_URL || "https://atm-brokerage-crm.vercel.app").replace(/\/$/, "");
   const text = `${req.seller_name || req.seller_email || "The seller"} finished the due diligence checklist for "${route.title}".
 

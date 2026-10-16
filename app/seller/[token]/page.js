@@ -253,22 +253,17 @@ export default function SellerPortal() {
         ))}
 
         <section style={{ marginTop: 40, background: K.paper, border: `1px solid ${K.line}`, borderRadius: 12, padding: 20 }}>
-          {finished || d.submitted_at ? (
-            <>
-              <h2 style={{ fontSize: 20, margin: 0 }}>Thanks, your broker has been told.</h2>
-              <p style={{ fontSize: 16, color: K.muted, lineHeight: 1.6, margin: "8px 0 0" }}>You can still come back to this link to add anything that's coming soon. We'll remind you when a date you gave comes up.</p>
-            </>
-          ) : (
-            <>
-              <h2 style={{ fontSize: 20, margin: 0 }}>Finished for now?</h2>
-              <p style={{ fontSize: 16, color: K.muted, lineHeight: 1.6, margin: "8px 0 14px" }}>
-                {open.length ? `${open.length} item${open.length === 1 ? " still needs" : "s still need"} an answer. You can send what you have and come back later.` : "Every item has an answer."}
-              </p>
-              <button type="button" onClick={finish} disabled={finishing}
-                style={{ width: "100%", minHeight: 50, borderRadius: 8, border: "none", background: accent, color: "#fff", fontFamily: FONT, fontSize: 17, fontWeight: 700, cursor: "pointer" }}>
-                {finishing ? "Sending…" : "Send to my broker"}
-              </button>
-            </>
+          <h2 style={{ fontSize: 20, margin: 0 }}>{finished ? "Sent. Your broker has been told." : d.submitted_at ? "Added more since you last sent it?" : "Finished for now?"}</h2>
+          <p style={{ fontSize: 16, color: K.muted, lineHeight: 1.6, margin: "8px 0 14px" }}>
+            {finished
+              ? "You can keep using this link to add anything that's coming soon."
+              : open.length ? `${open.length} item${open.length === 1 ? " still needs" : "s still need"} an answer. You can send what you have and come back later.` : "Every item has an answer."}
+          </p>
+          {!finished && (
+            <button type="button" onClick={finish} disabled={finishing}
+              style={{ width: "100%", minHeight: 50, borderRadius: 8, border: "none", background: accent, color: "#fff", fontFamily: FONT, fontSize: 17, fontWeight: 700, cursor: "pointer" }}>
+              {finishing ? "Sending…" : d.submitted_at ? "Send an update to my broker" : "Send to my broker"}
+            </button>
           )}
         </section>
 
