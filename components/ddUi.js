@@ -14,7 +14,8 @@ export const STATE = {
   requested:        { label: "Requested",       fg: "#c084fc", bg: "#581c8755" },
   missing:          { label: "Missing",         fg: "#f87171", bg: "#7f1d1d55" },
   open:             { label: "Missing",         fg: "#f87171", bg: "#7f1d1d55" },
-  declined:         { label: "Seller declined", fg: "#a8a29e", bg: "#44403c55" },
+  coming_soon:      { label: "Coming soon",     fg: "#fbbf24", bg: "#78350f55" },
+  declined:         { label: "Won't provide",   fg: "#a8a29e", bg: "#44403c55" },
   na:               { label: "N/A",             fg: "#64748b", bg: "#1e293b" },
 };
 

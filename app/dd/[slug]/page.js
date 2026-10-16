@@ -16,14 +16,15 @@ function requestEmail(route, items) {
 
 Hi ${first},
 
-I'm Chrislie, I work with John Sosville at ATM Brokerage on the listing side. We've had buyer activity on your route and there are a handful of details I don't have yet. Getting these in front of buyers up front usually means better offers and a lot fewer questions later.
+We've had buyer activity on your route and there are a handful of details I don't have yet. Getting these in front of buyers up front usually means better offers and a lot fewer questions later.
 
 When you have a few minutes:
 ${qs}
 
 Short answers are fine — bullet points in a reply work.
 
-Thanks, Chrislie`;
+Thanks,
+John Sosville`;
 }
 
 function ItemRow({ it, selected, onSelect, onSave }) {
@@ -61,6 +62,7 @@ function ItemRow({ it, selected, onSelect, onSave }) {
               {it.updated_by && it.updated_by !== "claude-dd-audit" ? " · updated by " + it.updated_by : it.updated_by === "claude-dd-audit" ? " · prefilled from deal room" : ""}
             </div>
           )}
+          {it.state === "coming_soon" && <div style={{ marginTop: 4, fontSize: 12, color: "#fbbf24" }}>Seller expects it by {it.expected_date || "—"}{it.expected_date && it.expected_date < new Date().toISOString().slice(0, 10) ? " (past due)" : ""}</div>}
           {it.state === "declined" && it.declined_reason && <div style={{ marginTop: 4, fontSize: 12, color: "#a8a29e" }}>Declined: {it.declined_reason}</div>}
           {it.source_note && !it.source_note.startsWith("Audit:") && <div style={{ marginTop: 4, fontSize: 12, color: C.dim }}>Note: {it.source_note}</div>}
         </div>
@@ -85,6 +87,7 @@ function ItemRow({ it, selected, onSelect, onSave }) {
             <button disabled={busy} onClick={() => save({ status: "received" })} style={btn(false)}>Received (verify later)</button>
             <button disabled={busy} onClick={() => save({ status: "partial" })} style={btn(false)}>Partial</button>
             <button disabled={busy} onClick={() => save({ status: "requested" })} style={btn(false)}>Requested</button>
+            <button disabled={busy} onClick={() => { const dt = prompt("Seller expects to have it by (YYYY-MM-DD)", it.expected_date || ""); if (dt) save({ status: "coming_soon", expected_date: dt }); }} style={btn(false)}>Coming soon</button>
             <button disabled={busy} onClick={() => { const r = prompt("Why did the seller decline? (optional)", f.declined_reason || ""); if (r !== null) save({ status: "declined", declined_reason: r }); }} style={btn(false)}>Seller declined</button>
             <button disabled={busy} onClick={() => save({ status: "na" })} style={btn(false)}>N/A</button>
             <button disabled={busy} onClick={() => save({})} style={{ ...btn(false), marginLeft: "auto" }}>Save text only</button>
@@ -95,6 +98,79 @@ function ItemRow({ it, selected, onSelect, onSave }) {
   );
 }
 
+
+// Seller portal: the seller answers the checklist themselves at /seller/<token>.
+function SellerPortalCard({ route, links, score, onAct, reload }) {
+  const [edit, setEdit] = useState(!route.seller_contact_email);
+  const [f, setF] = useState({ name: route.seller_contact_name || "", email: route.seller_contact_email || "", phone: route.seller_contact_phone || "" });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const live = (links || []).find((l) => !l.revoked_at && (!l.expires_at || new Date(l.expires_at) > new Date()));
+  const when = (t) => (t ? new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null);
+
+  const saveContact = async () => {
+    setBusy(true); setMsg("");
+    try { await authFetch("/api/admin/dd/" + route.slug, { method: "PATCH", body: JSON.stringify({ action: "seller_contact", ...f }) }); setEdit(false); await reload(); }
+    catch (e) { setMsg(e.message); } finally { setBusy(false); }
+  };
+  const makeLink = async (send) => {
+    if (send && !confirm(`Email the seller portal link to ${route.seller_contact_email} from John (John is cc'd)?`)) return;
+    setBusy(true); setMsg("");
+    try {
+      const r = await authFetch("/api/admin/dd/" + route.slug, { method: "PATCH", body: JSON.stringify({ action: "seller_link", send }) });
+      if (!send || !r.sent) { await navigator.clipboard.writeText(r.url).catch(() => {}); }
+      setMsg(r.warning || (r.sent ? "Sent. The seller's answers will show up here as they come in." : "New link copied to your clipboard."));
+      await reload();
+    } catch (e) { setMsg(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ padding: 16, display: "grid", gap: 10, fontSize: 13 }}>
+      <div style={{ color: C.dim, lineHeight: 1.5 }}>The seller answers every open item themselves: answer or file, coming soon with a date, or won't provide. Answers land on this checklist as "to verify".</div>
+
+      {edit ? (
+        <div style={{ display: "grid", gap: 6 }}>
+          <input placeholder="Seller name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} style={input} />
+          <input placeholder="Seller email (direct)" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} style={input} />
+          <input placeholder="Seller mobile" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} style={input} />
+          <div style={{ display: "flex", gap: 6 }}>
+            <button disabled={busy} onClick={saveContact} style={btn(true)}>Save seller contact</button>
+            {route.seller_contact_email && <button onClick={() => setEdit(false)} style={btn(false)}>Cancel</button>}
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div><b>{route.seller_contact_name || "Seller"}</b> · {route.seller_contact_email}{route.seller_contact_phone ? " · " + route.seller_contact_phone : ""}</div>
+          <button onClick={() => setEdit(true)} style={{ ...btn(false), marginTop: 6 }}>Edit contact</button>
+        </div>
+      )}
+
+      {live ? (
+        <div style={{ borderTop: "1px solid " + C.line, paddingTop: 10, display: "grid", gap: 4 }}>
+          <div>Link created {when(live.created_at)} by {live.created_by || "—"}{live.seller_email ? " for " + live.seller_email : ""}</div>
+          <div style={{ color: live.opened_at ? "#4ade80" : C.faint }}>{live.opened_at ? `Opened ${when(live.opened_at)} · last seen ${when(live.last_seen_at)}` : "Not opened yet"}</div>
+          <div>{live.answers_count || 0} answer(s) from the seller{live.submitted_at ? ` · sent as done ${when(live.submitted_at)}` : ""}</div>
+          {score?.n_coming_soon > 0 && <div style={{ color: "#fbbf24" }}>{score.n_coming_soon} coming soon{score.n_coming_overdue ? `, ${score.n_coming_overdue} past the seller's date` : ""}</div>}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+            <button onClick={() => { navigator.clipboard.writeText(live.url); setMsg("Link copied."); }} style={btn(false)}>Copy link</button>
+            <a href={live.url} target="_blank" rel="noreferrer" style={{ ...btn(false), textDecoration: "none" }}>See what the seller sees</a>
+            <button onClick={() => { if (confirm("Turn this link off? The seller will need a new one.")) onAct({ action: "seller_link_revoke", id: live.id }); }} style={btn(false)}>Turn off</button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ color: C.faint }}>No seller link yet.</div>
+      )}
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", borderTop: "1px solid " + C.line, paddingTop: 10 }}>
+        <button disabled={busy || !route.seller_contact_email} onClick={() => makeLink(true)} style={btn(true)} title={route.seller_contact_email ? "" : "Add the seller's email first"}>
+          {live ? "Email a fresh link to the seller" : "Email the link to the seller"}
+        </button>
+        <button disabled={busy} onClick={() => makeLink(false)} style={btn(false)}>{live ? "New link, copy only" : "Create link, copy only"}</button>
+      </div>
+      {msg && <div style={{ color: C.dim }}>{msg}</div>}
+    </div>
+  );
+}
 
 const KIND = { deal_answer: "Deal room answer", document: "Uploaded file", email: "Email" };
 
@@ -125,7 +201,7 @@ function Suggestion({ sg, item, onAct }) {
 
 const BST = {
   verified: ["\u2713 Verified", "#15803d"], provided: ["Provided", "#1d4ed8"], partial: ["Partial", "#b45309"],
-  requested: ["Requested", "#7c3aed"], pending: ["Pending", "#9ca3af"], not_provided: ["Not provided", "#6b7280"],
+  requested: ["Requested", "#7c3aed"], pending: ["Pending", "#9ca3af"], not_provided: ["Not provided", "#6b7280"], coming_soon: ["Coming soon", "#b45309"],
 };
 
 // Exactly what buyers would see on the listing page (same data as the public endpoint).
@@ -295,8 +371,13 @@ export default function DDChecklist() {
             <BadgePreview key={String(score?.dd_score) + "-" + (score?.n_verified || 0)} slug={route.slug} live={route.dd_badge_enabled === true} />
           </div>
 
+          <div style={{ ...card, borderColor: "#1d4ed8" }}>
+            <h2 style={{ ...h2, color: "#60a5fa" }}>Seller portal</h2>
+            <SellerPortalCard route={route} links={d.sellerLinks} score={score} onAct={act} reload={load} />
+          </div>
+
           <div style={card}>
-            <h2 style={h2}>Ask the seller</h2>
+            <h2 style={h2}>Ask the seller by email instead</h2>
             <div style={{ padding: 16, display: "grid", gap: 10, fontSize: 13 }}>
               <div style={{ color: C.dim }}>{selKeys.length ? selKeys.length + " item(s) selected" : "Tick items on the left, or:"}</div>
               <button onClick={selectAllOpen} style={btn(false)}>Select all open items</button>
