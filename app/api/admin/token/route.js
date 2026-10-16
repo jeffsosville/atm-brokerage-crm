@@ -1,8 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { requireStaff } from "../../../../lib/serverAuth";
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co", process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 export async function POST(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { dealId } = await request.json();
     if (!dealId) return Response.json({ error: "dealId required" }, { status: 400 });

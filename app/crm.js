@@ -2,13 +2,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../lib/auth";
 import { supabase as sbClient } from "../lib/supabase";
+import { userHeaders } from "../lib/sbRest";
 import DealRoomPanel from "../components/DealRoomPanel";
 import PeoplePanel from "../components/PeoplePanel";
 import { useVertical, VerticalSelect, vMeta, dealSlug } from "../lib/vertical";
 
 const SB = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
-const SK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indncm14aHhvem95dmNtdmJmdXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzI5MTUsImV4cCI6MjA3NDQwODkxNX0.zuOIlNRTC3kjBWHxp9_sef2V9pe9erDSljEcJ2EL9to";
-const H = { apikey: SK, Authorization: `Bearer ${SK}`, "Content-Type": "application/json", Prefer: "return=representation" };
 
 const STATUSES = [
   { v: "new", l: "New", c: "#3b82f6", b: "#1e3a5f" },
@@ -33,17 +32,17 @@ const STAGES = [
 ];
 
 async function api(path) {
-  const r = await fetch(SB + "/rest/v1/" + path, { headers: H });
+  const r = await fetch(SB + "/rest/v1/" + path, { headers: await userHeaders({ Prefer: "return=representation" }) });
   if (!r.ok) throw new Error("Supabase error: " + r.status);
   return r.json();
 }
 async function apiPost(path, body) {
-  const r = await fetch(SB + "/rest/v1/" + path, { method: "POST", headers: H, body: JSON.stringify(body) });
+  const r = await fetch(SB + "/rest/v1/" + path, { method: "POST", headers: await userHeaders({ Prefer: "return=representation" }), body: JSON.stringify(body) });
   if (!r.ok) throw new Error("Supabase error: " + r.status);
   return r.json();
 }
 async function apiPatch(path, body) {
-  const r = await fetch(SB + "/rest/v1/" + path, { method: "PATCH", headers: H, body: JSON.stringify(body) });
+  const r = await fetch(SB + "/rest/v1/" + path, { method: "PATCH", headers: await userHeaders({ Prefer: "return=representation" }), body: JSON.stringify(body) });
   if (!r.ok) throw new Error("Supabase error: " + r.status);
   return r.json();
 }
@@ -296,7 +295,7 @@ function Pipeline({ vertical = "all" }) {
 
       {selected && <DealDetail deal={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate} onDelete={async (id) => {
         try {
-          await fetch(SB + "/rest/v1/atm_deals?id=eq." + id, { method: "DELETE", headers: H });
+          await fetch(SB + "/rest/v1/atm_deals?id=eq." + id, { method: "DELETE", headers: await userHeaders({ Prefer: "return=representation" }) });
           setDeals(p => p.filter(d => d.id !== id));
           setSelected(null);
         } catch (e) { console.error(e); }
@@ -360,7 +359,7 @@ function ContactCard({ contact, onSave, onDelete }) {
   const del = async () => {
     if (!confirm("Delete this contact?")) return;
     try {
-      await fetch(SB + "/rest/v1/atm_contacts?id=eq." + contact.id, { method: "DELETE", headers: H });
+      await fetch(SB + "/rest/v1/atm_contacts?id=eq." + contact.id, { method: "DELETE", headers: await userHeaders({ Prefer: "return=representation" }) });
       onDelete(contact.id);
     } catch (e) { console.error(e); }
   };
@@ -834,7 +833,7 @@ export default function CRM() {
       if (hasEmail) cq += "&email=not.is.null";
       if (hasPhone) cq += "&phone=not.is.null";
       if (search) cq += "&or=(company_name.ilike.*" + search + "*,city.ilike.*" + search + "*,state.ilike.*" + search + "*,notes.ilike.*" + search + "*)";
-      const cr = await fetch(SB + "/rest/v1/" + cq, { headers: { ...H, Prefer: "count=exact", Range: "0-0" } });
+      const cr = await fetch(SB + "/rest/v1/" + cq, { headers: await userHeaders({ Prefer: "count=exact", Range: "0-0" }) });
       const rng = cr.headers.get("content-range");
       if (rng) setTotal(parseInt(rng.split("/")[1]) || 0);
     } catch (e) { console.error("Load error:", e); }

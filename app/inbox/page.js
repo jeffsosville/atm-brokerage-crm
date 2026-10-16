@@ -1,12 +1,14 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "../../lib/auth";
+import LoginPage from "../../components/LoginPage";
+import { userHeaders } from "../../lib/sbRest";
 
 const SUPABASE_URL = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indncm14aHhvem95dmNtdmJmdXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzI5MTUsImV4cCI6MjA3NDQwODkxNX0.zuOIlNRTC3kjBWHxp9_sef2V9pe9erDSljEcJ2EL9to";
 
 const api = async (path) => {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    headers: await userHeaders(),
   });
   return r.json();
 };
@@ -21,7 +23,7 @@ const timeAgo = (d) => {
   return new Date(d).toLocaleDateString();
 };
 
-export default function InboxPage() {
+function InboxPageInner() {
   const [emails, setEmails] = useState([]);
   const [companies, setCompanies] = useState({});
   const [loading, setLoading] = useState(true);
@@ -231,4 +233,13 @@ export default function InboxPage() {
       </div>
     </div>
   );
+}
+
+
+// Staff only: the page and its data need a signed-in CRM user.
+export default function InboxPage() {
+  const { user, loading } = useAuth();
+  if (loading) return <div style={{ padding: 40, color: "#64748b", fontFamily: "system-ui" }}>Loading...</div>;
+  if (!user) return <LoginPage />;
+  return <InboxPageInner />;
 }

@@ -60,8 +60,8 @@ export async function POST(request) {
       .update({ escalated: false })
       .eq("id", question_id);
 
-    // Ingest into deal_embeddings so concierge learns this answer (fire and forget)
-    ingestAnswer({
+    // Teach the concierge this answer, unless it came from the seller: seller answers wait for the broker's review.
+    if (responder.role !== "seller") ingestAnswer({
       deal_id: responder.deal_id,
       question: question.question,
       answer: answer.trim(),

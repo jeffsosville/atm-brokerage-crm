@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { DEAL_HUB } from "../../../../lib/dealHub";
+import { requireStaff } from "../../../../lib/serverAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co",
@@ -20,6 +21,7 @@ const sendEmail = async ({ from, to, reply_to, subject, html, text }) => {
 };
 
 export async function POST(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { question_id, deal_id, deal_name, question, buyer_name } = await request.json();
 

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ddContextForDeal, hasDealAccess } from "../../../lib/ddContext";
 import { brandFor, PHONE } from "../../../lib/brands";
+import { findConfidential, NEVER_DISCLOSE } from "../../../lib/confidential";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -50,16 +51,21 @@ export async function POST(request) {
       return Response.json({ error: "dealId and question required" }, { status: 400 });
     }
 
+    // The concierge only runs inside a deal room: the buyer's deal room link must be valid for this deal.
+    const ndaAccess = await hasDealAccess(token, dealId).catch(() => false);
+    if (!ndaAccess) {
+      return Response.json({ error: "Deal room access required" }, { status: 403 });
+    }
+
     const deals = await supaFetch(`atm_deals?id=eq.${dealId}&select=*`);
     const deal = deals?.[0];
 
+    // Internal sources (seller notes) never reach the concierge.
     const chunks = await supaFetch(
-      `deal_embeddings?deal_id=eq.${dealId}&select=content_chunk,source_type,source_name&order=source_type.asc,chunk_index.asc`
+      `deal_embeddings?deal_id=eq.${dealId}&source_type=not.in.(seller_notes,internal)&select=content_chunk,source_type,source_name&order=source_type.asc,chunk_index.asc`
     );
     const context = (chunks || []).map((c) => c.content_chunk).join("\n\n");
 
-    // Due-diligence checklist answers (Chrislie's work). NDA-level items only for a valid Deal Room token.
-    const ndaAccess = await hasDealAccess(token, dealId).catch(() => false);
     const dd = await ddContextForDeal(dealId, { includeNda: ndaAccess }).catch((e) => {
       console.error("[concierge] dd context", e);
       return { text: "", count: 0 };
@@ -94,6 +100,7 @@ RULES:
 1. Answer based ONLY on the deal documents, the due diligence checklist and data above, plus general ${b.industry} industry knowledge.
 1a. Prefer VERIFIED checklist answers over document text. For answers marked "not yet verified" or "partial", say they are from the seller and still being confirmed. If the checklist says the seller declined, say so plainly and hand off.
 2. NEVER reveal the seller's identity, personal information, or company name.
+2a. ${NEVER_DISCLOSE}
 3. NEVER share internal notes, broker communications, or confidential strategy.
 4. Be helpful and professional without being pushy.
 5. If you don't know something, say so and provide contact info: Phone: ${PHONE}, Email: ${b.email}, Website: ${b.site}
@@ -119,7 +126,15 @@ Only add that line when one of these applies. Never mention the word ESCALATE an
     // The model flags hand-offs with a final "ESCALATE: reason" line; strip it before the buyer sees it.
     const escMatch = raw.match(/\n?\s*ESCALATE:\s*(.+)\s*$/i);
     const modelEscalation = escMatch ? escMatch[1].trim().slice(0, 200) : null;
-    const answer = (escMatch ? raw.slice(0, escMatch.index) : raw).trim();
+    let answer = (escMatch ? raw.slice(0, escMatch.index) : raw).trim();
+
+    // Last check: if the reply contains an address, tax ID, account number or similar, it never reaches the buyer.
+    const leaks = findConfidential(answer);
+    const blocked = leaks.length > 0;
+    if (blocked) {
+      console.warn("[concierge] blocked reply:", leaks.map((l) => l.kind).join(", "));
+      answer = "That detail is shared later in due diligence, directly through the broker. I've passed your question along and the broker will follow up with you personally.";
+    }
 
     const lowerQ = question.toLowerCase();
     const lowerAnswer = answer.toLowerCase();
@@ -148,8 +163,8 @@ Only add that line when one of these applies. Never mention the word ESCALATE an
       lowerAnswer.includes("not available in our") ||
       lowerAnswer.includes("information isn't included");
 
-    const escalated = !!modelEscalation || buyerWantsHuman || aiCantAnswer;
-    const escalationReason = modelEscalation || (buyerWantsHuman ? "buyer asked for a person" : aiCantAnswer ? "concierge couldn't answer" : null);
+    const escalated = blocked || !!modelEscalation || buyerWantsHuman || aiCantAnswer;
+    const escalationReason = blocked ? "reply held back: possible " + leaks.map((l) => l.kind).join(", ") : modelEscalation || (buyerWantsHuman ? "buyer asked for a person" : aiCantAnswer ? "concierge couldn't answer" : null);
     const confidence = escalated ? 0.5 : 0.85;
 
     // Save question — use supaInsert to get the row id back
@@ -187,7 +202,7 @@ Only add that line when one of these applies. Never mention the word ESCALATE an
       if (savedQuestion?.id) {
         fetch(`${DEAL_HUB_URL}/api/admin/qa-notify`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "x-internal-secret": process.env.INBOX_CRON_SECRET || process.env.CRON_SECRET || "" },
           body: JSON.stringify({
             question_id: savedQuestion.id,
             deal_id: dealId,

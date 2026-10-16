@@ -3,6 +3,7 @@ import { suggestFromText } from "../../../../lib/ddSuggest";
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
+import { requireStaff } from "../../../../lib/serverAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co",
@@ -144,6 +145,7 @@ ${truncated}`,
 export const maxDuration = 300;
 
 export async function POST(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { dealId } = await request.json();
     if (!dealId) return Response.json({ error: "dealId required" }, { status: 400 });
@@ -171,7 +173,8 @@ export async function POST(request) {
       .from("listing_files")
       .select("id, file_name, file_type, storage_path")
       .eq("listing_id", dealId)
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .eq("buyer_visible", true); // private files (seller uploads not yet shared) never feed the concierge
 
     if (!files || files.length === 0) {
       return Response.json({ success: true, message: "No files to ingest", filesProcessed: 0, chunksCreated: 0 });
@@ -305,7 +308,8 @@ export async function POST(request) {
   }
 }
 
-export async function GET() {
+export async function GET(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   return Response.json({
     message: "POST { dealId } to auto-ingest all uploaded files for a deal",
     note: "Buffalo deal is protected and will be skipped",

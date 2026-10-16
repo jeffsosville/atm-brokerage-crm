@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "../../lib/auth";
+import LoginPage from "../../components/LoginPage";
+import { userFetch } from "../../lib/sbRest";
 
 const PRIORITY_COLORS = {
   high: "#dc2626",
@@ -20,7 +23,7 @@ const ASSIGNEE_LABELS = {
   both: "Both",
 };
 
-export default function TodosPage() {
+function TodosPageInner() {
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("open");
@@ -42,7 +45,7 @@ export default function TodosPage() {
   async function loadTodos() {
     setLoading(true);
     try {
-      const res = await fetch("/api/todos");
+      const res = await userFetch("/api/todos");
       const data = await res.json();
       setTodos(data.todos || []);
     } catch (err) {
@@ -53,7 +56,7 @@ export default function TodosPage() {
 
   async function updateTodo(id, updates) {
     try {
-      await fetch(`/api/todos/${id}`, {
+      await userFetch(`/api/todos/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
@@ -67,7 +70,7 @@ export default function TodosPage() {
   async function deleteTodo(id) {
     if (!confirm("Delete this task?")) return;
     try {
-      await fetch(`/api/todos/${id}`, { method: "DELETE" });
+      await userFetch(`/api/todos/${id}`, { method: "DELETE" });
       loadTodos();
     } catch (err) {
       console.error("Delete failed:", err);
@@ -77,7 +80,7 @@ export default function TodosPage() {
   async function createTodo() {
     if (!newTodo.title.trim()) return;
     try {
-      await fetch("/api/todos", {
+      await userFetch("/api/todos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -354,3 +357,12 @@ const badgeStyle = {
   textTransform: "uppercase",
   letterSpacing: 0.3,
 };
+
+
+// Staff only: the page and its data need a signed-in CRM user.
+export default function TodosPage() {
+  const { user, loading } = useAuth();
+  if (loading) return <div style={{ padding: 40, color: "#64748b", fontFamily: "system-ui" }}>Loading...</div>;
+  if (!user) return <LoginPage />;
+  return <TodosPageInner />;
+}

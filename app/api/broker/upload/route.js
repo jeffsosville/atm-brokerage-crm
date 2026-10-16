@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireStaff } from "../../../../lib/serverAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co",
@@ -6,6 +7,7 @@ const supabase = createClient(
 );
 
 export async function POST(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const formData = await request.formData();
     const file = formData.get("file");
@@ -39,6 +41,7 @@ export async function POST(request) {
 }
 
 export async function GET(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const { searchParams } = new URL(request.url);
   const dealId = searchParams.get("dealId");
   if (!dealId) return Response.json({ error: "dealId required" }, { status: 400 });
@@ -48,6 +51,7 @@ export async function GET(request) {
 }
 
 export async function DELETE(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const { searchParams } = new URL(request.url);
   const fileId = searchParams.get("fileId");
   if (!fileId) return Response.json({ error: "fileId required" }, { status: 400 });

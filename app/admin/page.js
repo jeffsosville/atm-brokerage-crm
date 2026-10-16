@@ -1,13 +1,15 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { DEAL_HUB } from "../../lib/dealHub";
+import { useAuth } from "../../lib/auth";
+import LoginPage from "../../components/LoginPage";
+import { userHeaders, userFetch } from "../../lib/sbRest";
 
 const SB = "https://wgrmxhxozoyvcmvbfuxv.supabase.co";
-const SK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indncm14aHhvem95dmNtdmJmdXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzI5MTUsImV4cCI6MjA3NDQwODkxNX0.zuOIlNRTC3kjBWHxp9_sef2V9pe9erDSljEcJ2EL9to";
-const api = async (p, o = {}) => { const r = await fetch(SB + "/rest/v1/" + p, { headers: { apikey: SK, Authorization: "Bearer " + SK, "Content-Type": "application/json", ...o.headers }, ...o }); return r.json(); };
+const api = async (p, o = {}) => { const r = await fetch(SB + "/rest/v1/" + p, { ...o, headers: await userHeaders(o.headers) }); return r.json(); };
 const APP = DEAL_HUB; // buyer links always use the shared deal-room address
 
-export default function Admin() {
+function AdminInner() {
   const [authed, setAuthed] = useState(false);
   const [pin, setPin] = useState("");
   const [deals, setDeals] = useState([]);
@@ -49,7 +51,7 @@ export default function Admin() {
   const createDeal = async () => {
     if (!nd.deal_name) { setMsg("Name required"); return; }
     setLoading("c");
-    const resp = await fetch("/api/admin/deal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deal_name: nd.deal_name, atm_count: nd.atm_count ? parseInt(nd.atm_count) : null, asking_price: nd.asking_price ? parseFloat(nd.asking_price) : null, route_state: nd.route_state || null, route_cities: nd.route_cities || null, stage: nd.stage }) }); const r = await resp.json();
+    const resp = await userFetch("/api/admin/deal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deal_name: nd.deal_name, atm_count: nd.atm_count ? parseInt(nd.atm_count) : null, asking_price: nd.asking_price ? parseFloat(nd.asking_price) : null, route_state: nd.route_state || null, route_cities: nd.route_cities || null, stage: nd.stage }) }); const r = await resp.json();
     setMsg("Created! DL#: " + (r[0]?.dl_number || "assigned"));
     setNd({ deal_name: "", atm_count: "", asking_price: "", route_state: "", route_cities: "", stage: "prospect" });
     loadDeals(); setLoading("");
@@ -72,7 +74,7 @@ export default function Admin() {
     if (!sel) return;
     if (!ed.deal_name.trim()) { setMsg("Deal name required"); return; }
     setLoading("e");
-    const resp = await fetch("/api/admin/deal", {
+    const resp = await userFetch("/api/admin/deal", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -99,18 +101,18 @@ export default function Admin() {
     const f = e.target.files[0]; if (!f || !sel) return;
     setLoading("u");
     const fd = new FormData(); fd.append("file", f); fd.append("dealId", sel.id);
-    const r = await fetch("/api/broker/upload", { method: "POST", body: fd });
+    const r = await userFetch("/api/broker/upload", { method: "POST", body: fd });
     const d = await r.json();
     setMsg(d.error ? "Error: " + d.error : "Uploaded: " + f.name);
     loadFiles(sel.id); setLoading(""); if (fRef.current) fRef.current.value = "";
   };
 
-  const delFile = async (id) => { if (!confirm("Delete?")) return; await fetch("/api/broker/upload?fileId=" + id, { method: "DELETE" }); loadFiles(sel.id); };
+  const delFile = async (id) => { if (!confirm("Delete?")) return; await userFetch("/api/broker/upload?fileId=" + id, { method: "DELETE" }); loadFiles(sel.id); };
 
   const ingest = async () => {
     if (!cimText.trim() || !sel) { setMsg("Paste CIM text first"); return; }
     setLoading("i");
-    const r = await fetch("/api/admin/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, dlNumber: sel.dl_number, text: cimText, sourceType: "cim", sourceName: "CIM - " + sel.deal_name }) });
+    const r = await userFetch("/api/admin/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, dlNumber: sel.dl_number, text: cimText, sourceType: "cim", sourceName: "CIM - " + sel.deal_name }) });
     const d = await r.json();
     setMsg(d.error ? "Error: " + d.error : "Ingested " + d.chunks + " chunks!"); setCimText(""); setLoading("");
   };
@@ -118,21 +120,21 @@ export default function Admin() {
   const ingestSellerNotes = async () => {
     if (!sellerNotes.trim() || !sel) { setMsg("Add seller notes first"); return; }
     setLoading("s");
-    const r = await fetch("/api/admin/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, dlNumber: sel.dl_number, text: sellerNotes, sourceType: "seller_notes", sourceName: "Seller Notes - " + sel.deal_name }) });
+    const r = await userFetch("/api/admin/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, dlNumber: sel.dl_number, text: sellerNotes, sourceType: "seller_notes", sourceName: "Seller Notes - " + sel.deal_name }) });
     const d = await r.json();
     setMsg(d.error ? "Error: " + d.error : "Seller notes saved (" + d.chunks + " chunks)!"); setLoading("");
   };
 
   const loadFaq = async () => {
     if (!sel) return; setLoading("f");
-    const r = await fetch("/api/admin/ingest-faq", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, dlNumber: sel.dl_number }) });
+    const r = await userFetch("/api/admin/ingest-faq", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, dlNumber: sel.dl_number }) });
     const d = await r.json();
     setMsg(d.error ? "Error: " + d.error : "Loaded " + d.chunks + " FAQ chunks!"); setLoading("");
   };
 
   const genToken = async () => {
     if (!sel) return; setLoading("t");
-    const r = await fetch("/api/admin/token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id }) });
+    const r = await userFetch("/api/admin/token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id }) });
     const d = await r.json();
     if (d.token) { const u = APP + "/deals/" + d.token; navigator.clipboard.writeText(u).catch(() => {}); setMsg("Link copied! " + u); }
     else setMsg("Error: " + d.error);
@@ -256,14 +258,14 @@ export default function Admin() {
                   <button onClick={async () => {
                     const archiving = !ARCHIVED.includes(sel.stage);
                     if (archiving && !confirm("Archive " + sel.deal_name + "?\n\nMarks it closed and its route sold. Documents, buyers and history stay; it just moves to the Archived list.")) return;
-                    const r = await fetch("/api/admin/deal", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, stage: archiving ? "closed" : "listed" }) }).then(x => x.json());
+                    const r = await userFetch("/api/admin/deal", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealId: sel.id, stage: archiving ? "closed" : "listed" }) }).then(x => x.json());
                     if (r.error) { setMsg("Error: " + r.error); return; }
                     setMsg(archiving ? "Archived." : "Restored to active (stage: listed).");
                     if (r[0]) setSel(r[0]);
                     setShowArchived(archiving);
                     loadDeals();
                   }} style={{ marginLeft: 8, background: "#1e293b", color: "#fbbf24", border: "1px solid #78350f", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>{ARCHIVED.includes(sel.stage) ? "Unarchive" : "Archive"}</button>
-                  <button onClick={async () => { if (!confirm("Delete " + sel.deal_name + "?")) return; if (!confirm("Are you sure? This deletes ALL documents, tokens, and embeddings. Cannot be undone.")) return; await fetch("/api/admin/deal?dealId=" + sel.id, { method: "DELETE" }); setSel(null); loadDeals(); setMsg("Deal deleted."); }} style={{ marginLeft: 8, background: "#1e293b", color: "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Delete Deal</button>
+                  <button onClick={async () => { if (!confirm("Delete " + sel.deal_name + "?")) return; if (!confirm("Are you sure? This deletes ALL documents, tokens, and embeddings. Cannot be undone.")) return; await userFetch("/api/admin/deal?dealId=" + sel.id, { method: "DELETE" }); setSel(null); loadDeals(); setMsg("Deal deleted."); }} style={{ marginLeft: 8, background: "#1e293b", color: "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Delete Deal</button>
                   <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{sel.dl_number} · {sel.route_cities || ""} {sel.route_state || ""} · {sel.atm_count || "?"} ATMs · ${sel.asking_price ? Number(sel.asking_price).toLocaleString() : "TBD"} · {sel.stage}</div>
 
                   {editing && (
@@ -285,7 +287,7 @@ export default function Admin() {
                   )}
 
                   <button onClick={checkStatus} style={{ marginTop: 8, background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", marginRight: 8 }}>Check Concierge Status</button>
-                  <button onClick={async () => { if (!sel || !confirm("Auto-ingest all files for " + sel.deal_name + "?\n\nThis uses AI to read all PDF/DOCX/XLSX files and replace existing CIM/financial/Q&A chunks. FAQ and seller notes are preserved. Takes 30-90 seconds.")) return; setLoading("ai"); setMsg("Reading files with AI..."); try { const r = await fetch("/api/admin/auto-ingest", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ dealId: sel.id }) }); const d = await r.json(); if (d.error) { setMsg("Error: " + d.error); } else if (d.filesProcessed === 0) { setMsg(d.message || "No files processed"); } else { setMsg("\u2713 " + d.filesProcessed + " files \u2192 " + d.chunksCreated + " chunks (" + (d.sourceTypesReplaced || []).join(", ") + "). Skipped " + (d.filesSkippedTemplates || 0) + " templates."); } } catch (err) { setMsg("Error: " + err.message); } setLoading(""); }} disabled={loading === "ai"} style={{ marginTop: 8, background: "#7c3aed", color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>{loading === "ai" ? "\ud83e\udde0 Processing..." : "\ud83e\udde0 Auto-Ingest All Files"}</button>
+                  <button onClick={async () => { if (!sel || !confirm("Auto-ingest all files for " + sel.deal_name + "?\n\nThis uses AI to read all PDF/DOCX/XLSX files and replace existing CIM/financial/Q&A chunks. FAQ and seller notes are preserved. Takes 30-90 seconds.")) return; setLoading("ai"); setMsg("Reading files with AI..."); try { const r = await userFetch("/api/admin/auto-ingest", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ dealId: sel.id }) }); const d = await r.json(); if (d.error) { setMsg("Error: " + d.error); } else if (d.filesProcessed === 0) { setMsg(d.message || "No files processed"); } else { setMsg("\u2713 " + d.filesProcessed + " files \u2192 " + d.chunksCreated + " chunks (" + (d.sourceTypesReplaced || []).join(", ") + "). Skipped " + (d.filesSkippedTemplates || 0) + " templates."); } } catch (err) { setMsg("Error: " + err.message); } setLoading(""); }} disabled={loading === "ai"} style={{ marginTop: 8, background: "#7c3aed", color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>{loading === "ai" ? "\ud83e\udde0 Processing..." : "\ud83e\udde0 Auto-Ingest All Files"}</button>
                 </div>
 
                 <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: 16 }}>
@@ -295,7 +297,11 @@ export default function Admin() {
                   </div>
                   {files.length === 0 ? <p style={{ color: "#64748b", fontSize: 13 }}>No files yet.</p> : files.map(f => (
                     <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #1e293b" }}>
-                      <div><div style={{ fontSize: 13, fontWeight: 600 }}>{f.file_name}</div><div style={{ fontSize: 11, color: "#64748b" }}>{(f.file_size / 1024).toFixed(1)} KB · {new Date(f.uploaded_at).toLocaleDateString()}</div></div>
+                      <div><div style={{ fontSize: 13, fontWeight: 600 }}>{f.file_name}</div><div style={{ fontSize: 11, color: "#64748b" }}>{(f.file_size / 1024).toFixed(1)} KB · {new Date(f.uploaded_at).toLocaleDateString()}{f.uploaded_by === "seller" ? " · from seller" : ""}</div>
+                        <div style={{ fontSize: 11, marginTop: 3, color: f.buyer_visible === false ? "#fbbf24" : "#4ade80" }}>
+                          {f.buyer_visible === false ? "Private: buyers can't see it" : "Shared in the deal room"}
+                          <button onClick={async () => { const share = f.buyer_visible === false; if (share && !confirm("Share \"" + f.file_name + "\" with every buyer who signed this listing's NDA? Check it has no location addresses, tax returns or bank details first.")) return; await api("listing_files?id=eq." + f.id, { method: "PATCH", body: JSON.stringify({ buyer_visible: share }) }); loadFiles(sel.id); }} style={{ marginLeft: 8, background: "none", border: "1px solid #334155", color: "#e2e8f0", borderRadius: 4, padding: "1px 6px", fontSize: 10, cursor: "pointer" }}>{f.buyer_visible === false ? "Share with buyers" : "Make private"}</button>
+                        </div></div>
                       <button onClick={() => delFile(f.id)} style={{ background: "#1e293b", color: "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>Delete</button>
                     </div>
                   ))}
@@ -401,4 +407,13 @@ export default function Admin() {
       </div>
     </div>
   );
+}
+
+
+// Staff only: the page and its data need a signed-in CRM user.
+export default function Admin() {
+  const { user, loading } = useAuth();
+  if (loading) return <div style={{ padding: 40, color: "#64748b", fontFamily: "system-ui" }}>Loading...</div>;
+  if (!user) return <LoginPage />;
+  return <AdminInner />;
 }

@@ -1,10 +1,12 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import { requireStaff } from "../../../../lib/serverAuth";
 
 const execAsync = promisify(exec);
 
 export async function POST(request) {
+  if (!(await requireStaff(request))) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { email_id } = await request.json();
     if (!email_id) return Response.json({ error: 'email_id required' }, { status: 400 });
