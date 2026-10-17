@@ -33,7 +33,7 @@ export async function POST(request) {
     // offer at 8pm isn't waiting for the next queue check. Goes to staff only, so it carries the buyer's contact.
     let alerted = false;
     try {
-      const to = (process.env.ESCALATION_NOTIFY || "john@atmbrokerage.com").split(",").map((x) => x.trim()).filter(Boolean);
+      const to = (process.env.ESCALATION_NOTIFY || "info@atmbrokerage.com").split(",").map((x) => x.trim()).filter(Boolean);
       const queueUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://atm-brokerage-crm.vercel.app"}/queue`;
       const who = [buyer_name, buyer_email, buyer_phone].filter(Boolean).join(" · ") || "Buyer (no contact details given)";
       await sendEmail({
