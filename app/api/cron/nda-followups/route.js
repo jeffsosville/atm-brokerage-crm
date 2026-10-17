@@ -1,4 +1,5 @@
 import { adminDb as db } from "../../../../lib/serverAuth";
+import { isTeamEmail } from "../../../../lib/team";
 import { buildFollowupDay1, buildFollowupDay2, buildFollowupDay3 } from "../../../../lib/followupEmails";
 import { DEAL_HUB } from "../../../../lib/dealHub";
 
@@ -90,7 +91,7 @@ async function runStep(step, now, summary, dryRun) {
     .not(step.from, "is", null).lte(step.from, newest).gte(step.from, oldest);
   if (error) { summary.errors.push(`${step.label} query: ${error.message}`); return; }
 
-  for (const t of rows || []) {
+  for (const t of (rows || []).filter((r) => !isTeamEmail(r.buyer_email))) { // shared staff links: no drip to our own team
     try {
       const ctx = await listingContext(t);
       const email = step.build({

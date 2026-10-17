@@ -54,8 +54,15 @@ export default function DealHub() {
         setFiles(room.files || []);
         applyQA(room.qa || []);
 
-        if (t.buyer_email) {
-          const buyerInfo = { name: t.buyer_name || "", email: t.buyer_email || "", phone: t.buyer_phone || "" };
+        let known = null;
+        if (t.shared) {
+          // Shared link: remember who this visitor said they were, in this browser only
+          try { known = JSON.parse(localStorage.getItem("dealroom-buyer:" + token) || "null"); } catch (e) {}
+        } else if (t.buyer_email) {
+          known = { name: t.buyer_name || "", email: t.buyer_email || "", phone: t.buyer_phone || "" };
+        }
+        if (known?.email) {
+          const buyerInfo = known;
           setBuyer(buyerInfo);
           setGateComplete(true);
           setMessages([{ role: "assistant", content: "Hi! I'm the Deal Concierge for " + (deals[0]?.deal_name || "this " + brandFor(deals[0]).noun) + ". What would you like to know?" }]);
@@ -103,6 +110,7 @@ export default function DealHub() {
       });
       if (!saveResp.ok) throw new Error("Failed to save buyer info");
       const buyerInfo = { name: gateInput.name.trim(), email: gateInput.email.trim(), phone: gateInput.phone.trim() };
+      try { localStorage.setItem("dealroom-buyer:" + token, JSON.stringify(buyerInfo)); } catch (e) {}
       setBuyer(buyerInfo);
       setGateComplete(true);
       setMessages([{ role: "assistant", content: "Hi! I'm the Deal Concierge for " + (deal?.deal_name || "this " + brand.noun) + (deal?.dl_number ? " (" + deal.dl_number + ")" : "") + ". I can answer questions about the financials, equipment, operations, and help you understand if this business is right for you. What would you like to know?" }]);

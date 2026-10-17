@@ -235,7 +235,8 @@ async function run() {
   }
 
   // ---- 2. Deal-room questions the concierge couldn't answer ---------------
-  // One open item per buyer per deal; our own team testing a deal room is skipped.
+  // One open item per buyer per deal. Questions credited to a team address came through a shared link
+  // (real buyers, identity unknown), so each stays its own item rather than being lumped together.
   const { data: esc } = await db.from("deal_questions")
     .select("id, deal_id, question, buyer_name, buyer_email, created_at, advisor_answer").eq("escalated", true).is("advisor_answer", null);
   if (esc?.length) {
@@ -246,7 +247,7 @@ async function run() {
     ]);
     const skip = new Set([...(have || []).map((x) => x.deal_question_id), ...(answered || []).map((x) => x.question_id)]);
     const fresh = esc
-      .filter((q) => !skip.has(q.id) && !INTERNAL.test(String(q.buyer_email || "").trim()))
+      .filter((q) => !skip.has(q.id))
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     await loadDealVerticals(fresh.map((q) => q.deal_id));
     const personKey = (email, dealId) => `${String(email || "").trim().toLowerCase()}|${dealId}`;
@@ -257,7 +258,7 @@ async function run() {
     const existing = Object.fromEntries((openRoom || []).map((o) => [personKey(o.from_email, o.deal_id), o]));
     const pending = {};
     for (const q of fresh) {
-      const k = personKey(q.buyer_email, q.deal_id);
+      const k = INTERNAL.test(String(q.buyer_email || "").trim()) ? `q|${q.id}` : personKey(q.buyer_email, q.deal_id);
       const target = pending[k] || existing[k];
       if (target) {
         if (String(target.summary || "").includes(q.question)) continue;
