@@ -1,5 +1,6 @@
 import { adminDb as db } from "../../../../lib/serverAuth";
 import { loadDealToken, buyerFilesQuery, buyerQA, DEAL_FIELDS } from "../../../../lib/dealRoom";
+import { isTeamEmail } from "../../../../lib/team";
 
 // Everything the buyer's deal room page needs, checked against the deal room link on the server.
 // Replaces the page's old direct database reads (which needed the database open to everyone).
@@ -18,7 +19,10 @@ export async function GET(_request, { params }) {
   ]);
 
   return Response.json({
-    token: { id: t.id, buyer_name: t.buyer_name || "", buyer_email: t.buyer_email || "", buyer_phone: t.buyer_phone || "" },
+    // A link opened by staff and handed to many buyers: each visitor says who they are.
+    token: isTeamEmail(t.buyer_email)
+      ? { id: t.id, shared: true, buyer_name: "", buyer_email: "", buyer_phone: "" }
+      : { id: t.id, buyer_name: t.buyer_name || "", buyer_email: t.buyer_email || "", buyer_phone: t.buyer_phone || "" },
     deal: deal || null,
     // storage paths never leave the server; downloads go through /api/files with the token
     files: (files || []).map(({ storage_path, ...f }) => f),

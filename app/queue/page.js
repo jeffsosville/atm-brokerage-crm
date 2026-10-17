@@ -140,6 +140,7 @@ export default function Queue() {
               <div style={{ marginTop: 4, fontSize: 13 }}>{i.summary || i.subject}</div>
               {i.snippet && <div style={{ marginTop: 4, fontSize: 12, color: C.faint, maxHeight: 36, overflow: "hidden" }}>{i.snippet}</div>}
               {i.suggested_action && <div style={{ marginTop: 4, fontSize: 12, color: "#93c5fd" }}>→ {i.suggested_action}</div>}
+              {/Likely buyer/.test(i.notes || "") && <div style={{ marginTop: 4, fontSize: 12, color: "#fbbf24" }}>{(i.notes.match(/Likely buyer[^\n]*/) || [""])[0]}</div>}
               <Draft i={i} busy={drafting === i.id} onRedraft={() => redraft(i.id)} />
               {i.closed_reason && <div style={{ marginTop: 4, fontSize: 11, color: C.faint }}>{i.closed_reason}</div>}
               <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
