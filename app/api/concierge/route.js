@@ -200,7 +200,9 @@ Only add that line when one of these applies. Never mention the word ESCALATE an
 
       // Fire answer emails to all responders (John, Sanny, seller)
       if (savedQuestion?.id) {
-        fetch(`${DEAL_HUB_URL}/api/admin/qa-notify`, {
+        // Awaited (briefly): an un-awaited fetch can be cut off when the serverless function returns.
+        await fetch(`${DEAL_HUB_URL}/api/admin/qa-notify`, {
+          signal: AbortSignal.timeout(8000),
           method: "POST",
           headers: { "Content-Type": "application/json", "x-internal-secret": process.env.INBOX_CRON_SECRET || process.env.CRON_SECRET || "" },
           body: JSON.stringify({
@@ -209,6 +211,10 @@ Only add that line when one of these applies. Never mention the word ESCALATE an
             deal_name: deal?.deal_name,
             question,
             buyer_name: buyerName || null,
+            buyer_email: buyerEmail || null,
+            buyer_phone: buyerPhone || null,
+            reason: escalationReason || null,
+            ai_answer: blocked ? null : answer,
           }),
         }).catch((err) => console.error("[concierge] qa-notify fire failed:", err));
       }
