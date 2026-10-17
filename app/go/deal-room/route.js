@@ -3,14 +3,13 @@ import { adminDb as db } from "../../../lib/serverAuth";
 import { DEAL_HUB } from "../../../lib/dealHub";
 import { isTeamEmail } from "../../../lib/team";
 
-// Where the website's NDA form sends each signer, so every buyer gets their own deal room link.
-// WPForms (form 6387) confirmation → Redirect to:
-//   https://dealroom.sosville.co/go/deal-room?entry={entry_id}&email={field_id="EMAIL_FIELD_ID"}
-// The "NDA to CRM" snippet has already recorded the signature (nda_signatures) with that entry id,
-// so we only hand out a link when the entry and email match a signature from the last 2 hours.
+// The deal room link in the website's NDA email, so every signer gets their own deal room link.
+// WPForms (form 6387) notification for each listing links to:
+//   https://dealroom.sosville.co/go/deal-room?entry={entry_id}&email={field_id="3"}
+// The "NDA to CRM" snippet records the signature (nda_signatures) with that entry id, so we only hand
+// out a link when the entry and email match a real signature. The buyer can click it any time later.
 export const dynamic = "force-dynamic";
 
-const WINDOW_MS = 2 * 3600e3;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function page(title, text, refreshUrl) {
@@ -22,21 +21,21 @@ ${refreshUrl ? `<meta http-equiv="refresh" content="3;url=${refreshUrl}">` : ""}
 }
 
 async function findSignature(entry, email) {
-  const since = new Date(Date.now() - WINDOW_MS).toISOString();
   const { data } = await db.from("nda_signatures").select("id, email, name, phone, route_id, signed_at, created_at")
-    .eq("source", "wpforms").eq("entry_id", entry).ilike("email", email).gte("created_at", since).limit(1);
+    .eq("source", "wpforms").eq("entry_id", entry).ilike("email", email).limit(1);
   return data?.[0] || null;
 }
 
 export async function GET(request) {
   const url = new URL(request.url);
   const entry = String(url.searchParams.get("entry") || "").trim();
-  const email = String(url.searchParams.get("email") || "").trim().toLowerCase();
+  // an unencoded "+" in an address arrives as a space
+  const email = String(url.searchParams.get("email") || "").trim().toLowerCase().replace(/ /g, "+");
   const tries = Number(url.searchParams.get("n") || 0);
   const contact = "Email info@atmbrokerage.com and we'll send your link.";
   if (!/^\d{1,12}$/.test(entry) || !email.includes("@")) return page("We couldn't open your deal room", contact);
 
-  // The signature is normally saved before the browser arrives; give it a few seconds if not.
+  // Normally saved long before the click; give it a few seconds if the buyer is very quick.
   let sig = await findSignature(entry, email);
   for (let i = 0; !sig && i < 3; i++) { await sleep(1000); sig = await findSignature(entry, email); }
   if (!sig) {
