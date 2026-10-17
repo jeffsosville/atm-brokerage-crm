@@ -1,5 +1,5 @@
 import { adminDb as db } from "../../../../lib/serverAuth";
-import { preFilter, classifyEmail, mapQuestionToDD, NON_ACTIONABLE } from "../../../../lib/inbox/classify";
+import { preFilter, classifyEmail, mapQuestionToDD, NON_ACTIONABLE, INTERNAL } from "../../../../lib/inbox/classify";
 import { dueAtFor } from "../../../../lib/inbox/sla";
 import { parseMarketplaceLead, resolveMarketplaceLead, marketplaceReply, shouldAutoReply, sendMarketplaceReply } from "../../../../lib/inbox/marketplace";
 
@@ -235,6 +235,7 @@ async function run() {
   }
 
   // ---- 2. Deal-room questions the concierge couldn't answer ---------------
+  // One open item per buyer per deal; our own team testing a deal room is skipped.
   const { data: esc } = await db.from("deal_questions")
     .select("id, deal_id, question, buyer_name, buyer_email, created_at, advisor_answer").eq("escalated", true).is("advisor_answer", null);
   if (esc?.length) {
@@ -244,14 +245,40 @@ async function run() {
       db.from("deal_answers").select("question_id").in("question_id", ids),
     ]);
     const skip = new Set([...(have || []).map((x) => x.deal_question_id), ...(answered || []).map((x) => x.question_id)]);
-    await loadDealVerticals(esc.map((q) => q.deal_id));
-    const rows = esc.filter((q) => !skip.has(q.id)).map((q) => ({
-      source: "deal_room", deal_question_id: q.id, from_email: q.buyer_email, from_name: q.buyer_name,
-      subject: "Deal-room question", snippet: q.question, summary: q.question, kind: "buyer_question",
-      priority: "normal", is_nda_signer: true, deal_id: q.deal_id, route_id: byDeal[q.deal_id]?.id || null, vertical_id: verticalOf(byDeal[q.deal_id], q.deal_id),
-      received_at: q.created_at, last_message_at: q.created_at, due_at: dueAtFor("buyer_question", q.created_at),
-      suggested_action: "Answer in the deal room (it will be shared with every NDA buyer) or reply to the buyer directly.",
-    }));
+    const fresh = esc
+      .filter((q) => !skip.has(q.id) && !INTERNAL.test(String(q.buyer_email || "").trim()))
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    await loadDealVerticals(fresh.map((q) => q.deal_id));
+    const personKey = (email, dealId) => `${String(email || "").trim().toLowerCase()}|${dealId}`;
+    const { data: openRoom } = fresh.length
+      ? await db.from("inbound_items").select("id, from_email, deal_id, summary")
+          .eq("source", "deal_room").in("status", OPEN).in("deal_id", [...new Set(fresh.map((q) => q.deal_id))])
+      : { data: [] };
+    const existing = Object.fromEntries((openRoom || []).map((o) => [personKey(o.from_email, o.deal_id), o]));
+    const pending = {};
+    for (const q of fresh) {
+      const k = personKey(q.buyer_email, q.deal_id);
+      const target = pending[k] || existing[k];
+      if (target) {
+        if (String(target.summary || "").includes(q.question)) continue;
+        target.summary = `${target.summary || ""}\n• ${q.question}`.trim();
+        if (pending[k]) {
+          Object.assign(pending[k], { snippet: q.question, last_message_at: q.created_at });
+        } else {
+          await db.from("inbound_items").update({ summary: target.summary, snippet: q.question, last_message_at: q.created_at, updated_at: now }).eq("id", target.id);
+        }
+        stats.merged++;
+        continue;
+      }
+      pending[k] = {
+        source: "deal_room", deal_question_id: q.id, from_email: q.buyer_email, from_name: q.buyer_name,
+        subject: "Deal-room question", snippet: q.question, summary: q.question, kind: "buyer_question",
+        priority: "normal", is_nda_signer: true, deal_id: q.deal_id, route_id: byDeal[q.deal_id]?.id || null, vertical_id: verticalOf(byDeal[q.deal_id], q.deal_id),
+        received_at: q.created_at, last_message_at: q.created_at, due_at: dueAtFor("buyer_question", q.created_at),
+        suggested_action: "Answer in the deal room (it will be shared with every NDA buyer) or reply to the buyer directly.",
+      };
+    }
+    const rows = Object.values(pending);
     if (rows.length) {
       const { error } = await db.from("inbound_items").insert(rows);
       if (error) stats.errors.push("escalations: " + error.message); else stats.escalations_added = rows.length;
