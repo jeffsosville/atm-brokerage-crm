@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import { adminDb as db } from "../../../lib/serverAuth";
 import { DEAL_HUB } from "../../../lib/dealHub";
-import { isTeamEmail } from "../../../lib/team";
 
 // The deal room link in the website's NDA email, so every signer gets their own deal room link.
 // WPForms (form 6387) notification for each listing links to:
@@ -56,7 +55,7 @@ export async function GET(request) {
     .eq("deal_id", route.deal_id).ilike("buyer_email", email).order("created_at", { ascending: false }).limit(1);
   const prior = mine?.[0];
   if (prior?.revoked_at) return page("Your access to this deal room is paused", "Please contact your broker at info@atmbrokerage.com.");
-  if (prior && !isTeamEmail(email) && (!prior.expires_at || new Date(prior.expires_at) > new Date())) {
+  if (prior && (!prior.expires_at || new Date(prior.expires_at) > new Date())) {
     return Response.redirect(`${DEAL_HUB}/deals/${prior.token}`, 302);
   }
 
