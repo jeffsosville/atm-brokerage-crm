@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Website chat test page</title></head>
+<body style="font:16px/1.5 system-ui,sans-serif;max-width:640px;margin:10vh auto;padding:0 16px;color:#1e293b">
+<h1>Website chat test page</h1>
+<p>The chat button is bottom right. To test as if on a listing page, add <code>?listing=</code> plus a website listing slug, e.g. <a href="?listing=san-antonio-tx-141atmroute-369k">?listing=san-antonio-tx-141atmroute-369k</a>.</p>
+<script>
+  // Simulate a listing page URL for testing (the chat reads location.href).
+  var l = new URLSearchParams(location.search).get("listing");
+  if (l) history.replaceState(null, "", location.pathname + "/atm-route-for-sale/" + l + "/?listing=" + l);
+</script>
+<script src="/chat.js" async></script>
+</body></html>

@@ -12,7 +12,18 @@ const KIND = {
   marketplace_lead: ["Marketplace lead", "#22d3ee"], vendor: ["Vendor", "#64748b"], internal: ["Internal", "#64748b"],
   automated: ["Automated", "#64748b"], spam: ["Spam", "#64748b"], other: ["Other", "#94a3b8"],
 };
-const SRC = { website_form: "Website form", email: "Email", marketplace: "BizBuySell", deal_room: "Deal room", listing: "Listing page", nda: "NDA", drift_chat: "Website chat", cold_call: "Cold call" };
+const SRC = { website_form: "Website form", email: "Email", marketplace: "BizBuySell", deal_room: "Deal room", listing: "Listing page", nda: "NDA", drift_chat: "Drift chat", site_chat: "Website chat", cold_call: "Cold call" };
+
+function Transcript({ text }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button style={btn(false)} onClick={() => setOpen(!open)}>{open ? "Hide chat" : "Show chat"}</button>
+      {open && <pre style={{ marginTop: 6, whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.45, color: C.dim, background: "rgba(148,163,184,.08)", padding: 10, borderRadius: 6, maxHeight: 360, overflow: "auto" }}>{text}</pre>}
+    </div>
+  );
+}
 
 function ago(iso) {
   const m = Math.round((Date.now() - new Date(iso)) / 60000);
@@ -141,6 +152,7 @@ export default function Queue() {
               {i.snippet && <div style={{ marginTop: 4, fontSize: 12, color: C.faint, maxHeight: 36, overflow: "hidden" }}>{i.snippet}</div>}
               {i.suggested_action && <div style={{ marginTop: 4, fontSize: 12, color: "#93c5fd" }}>→ {i.suggested_action}</div>}
               {/Likely buyer/.test(i.notes || "") && <div style={{ marginTop: 4, fontSize: 12, color: "#fbbf24" }}>{(i.notes.match(/Likely buyer[^\n]*/) || [""])[0]}</div>}
+              <Transcript text={i.transcript} />
               <Draft i={i} busy={drafting === i.id} onRedraft={() => redraft(i.id)} />
               {i.closed_reason && <div style={{ marginTop: 4, fontSize: 11, color: C.faint }}>{i.closed_reason}</div>}
               <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>

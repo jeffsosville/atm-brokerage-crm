@@ -68,7 +68,7 @@ export async function GET(request) {
     const p = get(i.lead_email || i.from_email); if (!p) continue;
     p.name ||= i.lead_name || i.from_name; p.phone ||= i.lead_phone; p.company ||= i.lead_business;
     p.verticals.add(vslug(i.vertical_id)); p.roles.add(i.kind === "seller_lead" ? "seller" : "buyer");
-    p.sources.add({ website_form: "Website", marketplace: "BizBuySell", email: "Email", drift_chat: "Chat", cold_call: "Cold call", deal_room: "Deal room" }[i.source] || i.source);
+    p.sources.add({ website_form: "Website", marketplace: "BizBuySell", email: "Email", drift_chat: "Drift chat", site_chat: "Website chat", cold_call: "Cold call", deal_room: "Deal room" }[i.source] || i.source);
     if (OPEN.includes(i.status)) p.open_items++;
     touch(p, i.received_at);
   }
