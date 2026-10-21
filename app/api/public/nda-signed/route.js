@@ -59,7 +59,8 @@ export async function POST(request) {
   if (!saved?.length) return Response.json({ ok: true, duplicate: true, matched_listing: !!routeId });
 
   let dealRoom = null;
-  if (routeId) {
+  // Paused 2026-10-21 while we confirm whether WordPress already sends deal room access.
+  if (routeId && process.env.NDA_SEND_DEAL_ROOM === "on") {
     const { data: route } = await db.from("atm_routes").select("deal_id").eq("id", routeId).maybeSingle();
     if (route?.deal_id) {
       try {
