@@ -1,10 +1,11 @@
 import crypto from "crypto";
 import { adminDb as db } from "../../../../lib/serverAuth";
+import { grantDealRoom } from "../../../../lib/grantDealRoom";
 
 export const dynamic = "force-dynamic";
 
 // Called by the WordPress snippet "NDA to CRM" each time someone submits the NDA form
-// (WPForms form 6387). Records the signature in nda_signatures. Sends no email.
+// (WPForms form 6387). Records the signature in nda_signatures, then emails the buyer their deal room link.
 // Header: x-nda-secret: <NDA_SIGNED_SECRET>
 function authorized(request) {
   const secret = process.env.NDA_SIGNED_SECRET || "";
@@ -49,10 +50,28 @@ export async function POST(request) {
   const q = row.entry_id
     ? db.from("nda_signatures").upsert(row, { onConflict: "source,entry_id", ignoreDuplicates: true })
     : db.from("nda_signatures").insert(row);
-  const { error } = await q;
+  const { data: saved, error } = await q.select("id, contact_id");
   if (error) {
     console.error("[nda-signed]", error);
     return Response.json({ error: "save failed" }, { status: 500 });
   }
-  return Response.json({ ok: true, matched_listing: !!routeId });
+  // A repeat delivery of the same WPForms entry saves nothing; don't email twice.
+  if (!saved?.length) return Response.json({ ok: true, duplicate: true, matched_listing: !!routeId });
+
+  let dealRoom = null;
+  if (routeId) {
+    const { data: route } = await db.from("atm_routes").select("deal_id").eq("id", routeId).maybeSingle();
+    if (route?.deal_id) {
+      try {
+        dealRoom = await grantDealRoom({
+          dealId: route.deal_id, email, name: row.name, phone: row.phone, company: row.company,
+          contactId: saved[0].contact_id, sourceUrl: listingUrl,
+        });
+      } catch (e) {
+        console.error("[nda-signed] deal room", e.message);
+      }
+    }
+  }
+  if (!dealRoom) console.error("[nda-signed] no deal room sent", JSON.stringify({ email, slug, routeId }));
+  return Response.json({ ok: true, matched_listing: !!routeId, deal_room_sent: !!dealRoom });
 }
