@@ -4,7 +4,9 @@ import { requireStaff } from "../../../../lib/serverAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co",
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  // Next.js caches server fetches by default; Supabase reads and signed URLs must always be fresh
+  { global: { fetch: (url, opts) => fetch(url, { ...opts, cache: "no-store" }) } }
 );
 
 const sendEmail = async ({ from, to, reply_to, subject, html, text }) => {

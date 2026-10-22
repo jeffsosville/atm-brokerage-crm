@@ -6,7 +6,9 @@ import { createClient } from "@supabase/supabase-js";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co",
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  // Next.js caches server fetches by default; Supabase reads and signed URLs must always be fresh
+  { global: { fetch: (url, opts) => fetch(url, { ...opts, cache: "no-store" }) } }
 );
 const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
 

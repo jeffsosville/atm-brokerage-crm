@@ -1,6 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireStaff } from "../../../../lib/serverAuth";
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co", process.env.SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wgrmxhxozoyvcmvbfuxv.supabase.co",
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  // Next.js caches server fetches by default; Supabase reads and signed URLs must always be fresh
+  { global: { fetch: (url, opts) => fetch(url, { ...opts, cache: "no-store" }) } }
+);
 
 const FAQ = [
   "FAQ: How do ATM routes work? An ATM route is a collection of ATM machines placed at business locations. The owner earns revenue from surcharge fees. Revenue depends on transaction volume, surcharge amount ($2.50-$4.00), and number of machines.",

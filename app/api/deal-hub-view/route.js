@@ -24,7 +24,12 @@ export async function POST(req) {
       });
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(
+  supabaseUrl,
+  supabaseServiceKey,
+  // Next.js caches server fetches by default; Supabase reads and signed URLs must always be fresh
+  { global: { fetch: (url, opts) => fetch(url, { ...opts, cache: "no-store" }) } }
+);
 
     // Fetch current row so we can decide first-view vs. repeat-view
     const { data: tokenRow, error: fetchErr } = await supabase
