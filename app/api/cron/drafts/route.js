@@ -1,5 +1,6 @@
 import { adminDb as db } from "../../../../lib/serverAuth";
 import { draftAndSave, DRAFT_KINDS, shouldDraft } from "../../../../lib/inbox/draft";
+import { canDraftVertical } from "../../../../lib/inbox/draftBrand";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -27,11 +28,11 @@ async function handler(request) {
     .gte("last_message_at", since).order("last_message_at", { ascending: false }).limit(150);
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
-  // The drafter writes as John at ATM Brokerage into info@, so vending/cleaning items stay
-  // undrafted (they sit in Jeff's queue) until those brands get their own drafter.
-  const { data: atmV } = await db.from("verticals").select("id").eq("slug", "atm").maybeSingle();
-  const isAtm = (i) => !i.vertical_id || !atmV || i.vertical_id === atmV.id;
-  const todo = (items || []).filter((i) => isAtm(i) && (i.source === "website_form" || new Date(i.last_message_at).getTime() >= emailSince) && shouldDraft(i) && (!i.draft_generated_at || new Date(i.last_message_at) > new Date(i.draft_generated_at))).slice(0, MAX_PER_RUN);
+  // Every vertical with a drafter (ATM, vending, cleaning) is drafted; others wait in the queue.
+  const { data: verts } = await db.from("verticals").select("id, slug");
+  const slugOf = Object.fromEntries((verts || []).map((v) => [v.id, v.slug]));
+  const hasDrafter = (i) => canDraftVertical(i.vertical_id ? slugOf[i.vertical_id] : "atm");
+  const todo = (items || []).filter((i) => hasDrafter(i) && (i.source === "website_form" || new Date(i.last_message_at).getTime() >= emailSince) && shouldDraft(i) && (!i.draft_generated_at || new Date(i.last_message_at) > new Date(i.draft_generated_at))).slice(0, MAX_PER_RUN);
   const stats = { candidates: todo.length, drafted: 0, errors: [] };
   for (let k = 0; k < todo.length; k += 3) {
     await Promise.all(todo.slice(k, k + 3).map(async (i) => {
