@@ -8,13 +8,14 @@ const OPEN = ["new", "drafted", "awaiting_john", "awaiting_nda"];
 const SKIP_KINDS = ["internal", "automated", "spam", "vendor"];
 const PAGE = 2000;
 
-// GET /api/admin/people?vertical=all|atm|vending|cleaning&type=all|buyers|sellers&q=
+// GET /api/admin/people?vertical=all|atm|vending|cleaning&type=all|buyers|sellers&list=all|subscribed|not_subscribed|unsubscribed&q=
 // Everyone who has dealt with a brand — NDA signers, deal-room buyers, and inbound leads —
 // merged into one row per email address.
 export async function GET(request) {
   if (!(await getUser(request))) return unauthorized();
   const params = new URL(request.url).searchParams;
   const type = params.get("type") || "all";
+  const list = params.get("list") || "all"; // all | subscribed | not_subscribed | unsubscribed
   const search = (params.get("q") || "").trim().toLowerCase();
   const vert = await verticalFromRequest(request);
   const { slugById } = await verticalMaps();
@@ -25,21 +26,24 @@ export async function GET(request) {
     return vert.slug === "atm" ? q.or(`vertical_id.eq.${vert.id},vertical_id.is.null`) : q.eq("vertical_id", vert.id);
   };
 
-  const [nda, tok, inb] = await Promise.all([
+  const [nda, tok, inb, subs] = await Promise.all([
     scope(db.from("nda_signatures").select("email, name, phone, company, listing_slug, signed_at, vertical_id"))
       .not("email", "is", null).order("signed_at", { ascending: false }).limit(PAGE),
     scope(db.from("deal_tokens").select("buyer_email, buyer_name, buyer_phone, buyer_company, source_listing_slug, signed_at, created_at, first_viewed_at, vertical_id"))
       .not("buyer_email", "is", null).order("created_at", { ascending: false }).limit(PAGE),
     scope(db.from("inbound_items").select("id, lead_email, from_email, lead_name, from_name, lead_phone, lead_business, kind, status, source, received_at, vertical_id"))
       .not("kind", "in", `(${SKIP_KINDS.join(",")})`).neq("status", "not_a_lead").order("received_at", { ascending: false }).limit(PAGE),
+    (vert ? db.from("newsletter_subscriptions").select("email, vertical, status, role, source, first_name, subscribed_at, unsubscribed_at, updated_at").eq("vertical", vert.slug)
+      : db.from("newsletter_subscriptions").select("email, vertical, status, role, source, first_name, subscribed_at, unsubscribed_at, updated_at"))
+      .order("updated_at", { ascending: false }).limit(PAGE),
   ]);
-  for (const r of [nda, tok, inb]) if (r.error) return Response.json({ error: r.error.message }, { status: 500 });
+  for (const r of [nda, tok, inb, subs]) if (r.error) return Response.json({ error: r.error.message }, { status: 500 });
 
   const people = new Map();
   const get = (email) => {
     const e = (email || "").trim().toLowerCase();
     if (!e || !e.includes("@")) return null;
-    if (!people.has(e)) people.set(e, { email: e, name: null, phone: null, company: null, verticals: new Set(), roles: new Set(), listings: new Set(), ndas: 0, deal_room: false, open_items: 0, sources: new Set(), last_at: null, first_at: null });
+    if (!people.has(e)) people.set(e, { email: e, name: null, phone: null, company: null, verticals: new Set(), roles: new Set(), listings: new Set(), ndas: 0, deal_room: false, open_items: 0, sources: new Set(), lists: {}, last_at: null, first_at: null });
     return people.get(e);
   };
   const touch = (p, at) => {
@@ -73,11 +77,25 @@ export async function GET(request) {
     touch(p, i.received_at);
   }
 
+  for (const n of subs.data || []) {
+    const p = get(n.email); if (!p) continue;
+    p.name ||= n.first_name;
+    p.verticals.add(n.vertical); p.roles.add(n.role === "seller" ? "seller" : "buyer");
+    p.lists[n.vertical] = n.status;
+    if (n.status === "subscribed") p.sources.add("Weekly email");
+    touch(p, n.subscribed_at || n.updated_at);
+  }
+
   let rows = [...people.values()].map((p) => ({
     ...p, verticals: [...p.verticals], roles: [...p.roles], listings: [...p.listings], sources: [...p.sources],
   }));
   if (search) rows = rows.filter((p) => [p.email, p.name, p.company, p.phone].some((v) => (v || "").toLowerCase().includes(search)));
-  const counts = { all: rows.length, buyers: rows.filter((p) => p.roles.includes("buyer")).length, sellers: rows.filter((p) => p.roles.includes("seller")).length, open: rows.filter((p) => p.open_items).length };
+  const onList = (p) => (vert ? p.lists[vert.slug] === "subscribed" : Object.values(p.lists).includes("subscribed"));
+  const offList = (p) => (vert ? p.lists[vert.slug] === "unsubscribed" : Object.values(p.lists).includes("unsubscribed") && !onList(p));
+  const counts = { subscribed: rows.filter(onList).length, all: rows.length, buyers: rows.filter((p) => p.roles.includes("buyer")).length, sellers: rows.filter((p) => p.roles.includes("seller")).length, open: rows.filter((p) => p.open_items).length };
+  if (list === "subscribed") rows = rows.filter(onList);
+  if (list === "not_subscribed") rows = rows.filter((p) => !onList(p) && !offList(p));
+  if (list === "unsubscribed") rows = rows.filter(offList);
   if (type === "buyers") rows = rows.filter((p) => p.roles.includes("buyer"));
   if (type === "sellers") rows = rows.filter((p) => p.roles.includes("seller"));
   rows.sort((a, b) => (b.last_at || "").localeCompare(a.last_at || ""));
