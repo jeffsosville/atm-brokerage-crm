@@ -16,7 +16,7 @@ const RESEND_KEY = process.env.RESEND_API_KEY;
 
 const SENDERS = {
   atm: "John Sosville <john@atmbrokerage.com>",
-  vending: "John Sosville <sales@vendingexits.com>",
+  vending: "John Sosville <info@vendingexits.com>",
   cleaning: "John Sosville <hello@cleaningexits.com>",
 };
 

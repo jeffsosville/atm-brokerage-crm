@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 const SELLER_SENDERS = {
   atm: "John Sosville <john@atmbrokerage.com>",
-  vending: "John Sosville <sales@vendingexits.com>",
+  vending: "John Sosville <info@vendingexits.com>",
   cleaning: "John Sosville <hello@cleaningexits.com>",
 };
 

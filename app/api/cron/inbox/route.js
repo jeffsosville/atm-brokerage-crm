@@ -58,6 +58,9 @@ async function run() {
     (data || []).forEach(setDealVertical);
   };
   const verticalOf = (route, dealId) => (dealId && dealVertical[dealId]) || route?.vertical_id || null;
+  // Fallback when no route/deal matched: the brand mailbox the email came from or went to
+  const BRAND_DOMAINS = [[/cleaningexits\.com/i, "cleaning"], [/vendingexits\.com/i, "vending"]];
+  const brandVertical = (...addrs) => { const t = addrs.filter(Boolean).join(" "); const hit = BRAND_DOMAINS.find(([re]) => re.test(t)); return hit ? vIdBySlug[hit[1]] || null : null; };
   const noteAsk = async (routeId, keys, at) => {
     if (!routeId || !keys?.length) return;
     const { error } = await db.rpc("dd_note_buyer_ask", { p_route: routeId, p_keys: keys, p_at: at });
@@ -142,7 +145,7 @@ async function run() {
       const dealId = mk?.res.deal_id || route?.deal_id || nda?.deal_id || null;
       await loadDealVerticals([dealId]);
       const { data: inserted, error } = await db.from("inbound_items").insert({
-        vertical_id: mk?.res.vertical_id || verticalOf(route, dealId),
+        vertical_id: mk?.res.vertical_id || verticalOf(route, dealId) || brandVertical(e.from_email, e.to_email),
         lead_email: mk?.lead.email || null, lead_name: mk?.lead.name || null, lead_phone: mk?.lead.phone || null,
         lead_location: mk?.lead.zip || null, lead_channel: mk ? mk.lead.marketplace : null,
         notes: mk ? [mk.lead.listingId && `${mk.lead.marketplace} listing ${mk.lead.listingId}`, mk.lead.headline, mk.lead.invest && `Able to invest: ${mk.lead.invest}`, mk.lead.timeline && `Purchase within: ${mk.lead.timeline}`, `Routed by ${mk.res.via}`].filter(Boolean).join(" · ") : null,

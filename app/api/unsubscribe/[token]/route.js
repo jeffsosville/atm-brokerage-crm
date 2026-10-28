@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 const BRANDS = {
   atm: { firm: "ATM Brokerage", email: "john@atmbrokerage.com" },
-  vending: { firm: "VendingExits", email: "sales@vendingexits.com" },
+  vending: { firm: "VendingExits", email: "info@vendingexits.com" },
   cleaning: { firm: "CleaningExits", email: "hello@cleaningexits.com" },
 };
 
