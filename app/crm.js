@@ -750,7 +750,15 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
 // ======================== MAIN CRM ========================
 
 export default function CRM() {
-  const [view, setView] = useState("crm"); // crm or pipeline
+  const [view, setView] = useState("crm"); // crm | people | pipeline | dealroom
+  const [peopleType, setPeopleType] = useState("all");
+  // Old /queue and /inbox links land here as ?view=people&type=open
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("view") === "people") { setView("people"); setPeopleType(sp.get("type") || "all"); }
+    } catch {}
+  }, []);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -993,12 +1001,10 @@ export default function CRM() {
             <VerticalSelect value={vertical} onChange={(v) => { setVertical(v); setSelected(null); setPage(0); }} locked={verticalLocked} />
             <div style={{ display: "flex", gap: 4 }}>
               <button onClick={() => { setView("crm"); setSelected(null); }} style={tabStyle(view === "crm")}>Companies</button>
-              <button onClick={() => { setView("people"); setSelected(null); }} style={tabStyle(view === "people")}>👥 People</button>
-              <button onClick={() => window.location.href="/inbox"} style={tabStyle(false)}>Inbox</button>
+              <button onClick={() => { setView("people"); setSelected(null); }} style={tabStyle(view === "people")}>👥 People &amp; Inbox</button>
               <button onClick={() => { setView("pipeline"); setSelected(null); }} style={tabStyle(view === "pipeline")}>Pipeline</button>
               <button onClick={() => { setView("dealroom"); setSelected(null); }} style={tabStyle(view === "dealroom")}>🤖 Deal Room</button>
               <button onClick={() => window.location.href="/todos"} style={tabStyle(false)}>✅ Tasks</button>
-              <button onClick={() => window.location.href="/queue"} style={tabStyle(false)}>📥 Inbound</button>
               <button onClick={() => window.location.href="/dd"} style={tabStyle(false)}>📋 Due Diligence</button>
             </div>
           </div>
@@ -1085,7 +1091,7 @@ export default function CRM() {
       </div>
 
       {/* Content */}
-      {view === "dealroom" ? <DealRoomPanel /> : view === "pipeline" ? <Pipeline vertical={vertical} /> : view === "people" ? <PeoplePanel vertical={vertical} /> : !companiesForBrand ? (
+      {view === "dealroom" ? <DealRoomPanel /> : view === "pipeline" ? <Pipeline vertical={vertical} /> : view === "people" ? <PeoplePanel key={peopleType} vertical={vertical} initialType={peopleType} /> : !companiesForBrand ? (
         <div style={{ padding: 48, textAlign: "center", color: "#64748b", fontSize: 14, lineHeight: 1.7 }}>
           Companies is the ATM operator directory, so there's nothing here for {vMeta(vertical).label} yet.<br />
           {vMeta(vertical).label} sellers, buyers and NDA signers are under <a onClick={() => setView("people")} style={{ color: "#60a5fa", cursor: "pointer" }}>👥 People</a>; new leads are in <a href="/queue" style={{ color: "#60a5fa" }}>📥 Inbound</a>.

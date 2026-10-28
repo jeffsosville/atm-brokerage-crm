@@ -3,10 +3,18 @@
 import { useEffect, useState } from "react";
 import { authFetch } from "../lib/authFetch";
 import { VerticalBadge, vMeta, VERTICALS } from "../lib/vertical";
+import PersonDrawer, { OpenItem } from "./PersonDrawer";
 
 const ss = { background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: "7px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" };
 const th = { padding: "10px 12px", textAlign: "left", color: "#475569", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px" };
 const td = { padding: "10px 12px", borderBottom: "1px solid #1e293b", verticalAlign: "top" };
+
+function dueTxt(iso) {
+  if (!iso) return null;
+  const ms = new Date(iso) - Date.now(), h = Math.abs(ms) / 36e5;
+  const t = h < 1 ? Math.round(h * 60) + "m" : h < 48 ? Math.round(h) + "h" : Math.round(h / 24) + "d";
+  return ms < 0 ? { t: "overdue " + t, c: "#f87171" } : { t: "due in " + t, c: "#facc15" };
+}
 
 function ago(iso) {
   if (!iso) return "—";
@@ -33,8 +41,10 @@ function ListToggle({ slug, status, disabled, onToggle, showLabel }) {
   );
 }
 
-export default function PeoplePanel({ vertical }) {
-  const [type, setType] = useState("all");
+export default function PeoplePanel({ vertical, initialType = "all" }) {
+  const [type, setType] = useState(initialType);
+  const [person, setPerson] = useState(null);
+  const [tick, setTick] = useState(0);
   const [list, setList] = useState("all");
   const [configured, setConfigured] = useState(true);
   const [busy, setBusy] = useState("");
@@ -47,7 +57,7 @@ export default function PeoplePanel({ vertical }) {
   useEffect(() => {
     setD(null); setErr("");
     authFetch(`/api/admin/people?vertical=${vertical}&type=${type}&list=${list}&q=${encodeURIComponent(query)}`).then(setD).catch((e) => setErr(e.message));
-  }, [vertical, type, list, query]);
+  }, [vertical, type, list, query, tick]);
   useEffect(() => { authFetch("/api/admin/subscriptions").then((r) => setConfigured(!!r.configured)).catch(() => {}); }, []);
 
   async function toggle(p, slug) {
@@ -76,7 +86,7 @@ export default function PeoplePanel({ vertical }) {
         {box("Everyone", c.all, null, "all")}
         {box("Buyers", c.buyers, "#60a5fa", "buyers")}
         {box("Sellers", c.sellers, "#fb923c", "sellers")}
-        {box("With open items", c.open, "#f87171")}
+        {box("Needs reply" + (c.overdue ? ` · ${c.overdue} overdue` : ""), c.open, "#f87171", "open")}
         {box("On weekly email", c.subscribed, "#4ade80")}
         <select value={list} onChange={(e) => setList(e.target.value)} style={{ ...ss, alignSelf: "center" }} title="Filter by weekly email list">
           <option value="all">Weekly email: everyone</option>
@@ -88,6 +98,14 @@ export default function PeoplePanel({ vertical }) {
       </div>
       {err && <div style={{ color: "#f87171" }}>{err}</div>}
       {!d && !err && <div style={{ padding: 40, textAlign: "center", color: "#475569" }}>Loading…</div>}
+      {d && d.unmatched?.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 10, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "1px", fontWeight: 700, marginBottom: 8 }}>
+            Waiting on us, no person attached yet ({d.unmatched.length}): forwards and notifications without a buyer or seller email
+          </div>
+          {d.unmatched.map((i) => <OpenItem key={i.id} i={i} onChange={() => setTick((t) => t + 1)} />)}
+        </div>
+      )}
       {d && !d.people.length && <div style={{ padding: 40, textAlign: "center", color: "#475569" }}>No one here for {vMeta(vertical).label} with these filters.</div>}
       {d && d.people.length > 0 && (
         <div style={{ overflowX: "auto" }}>
@@ -97,7 +115,7 @@ export default function PeoplePanel({ vertical }) {
             </tr></thead>
             <tbody>
               {d.people.map((p) => (
-                <tr key={p.email}>
+                <tr key={p.email} onClick={() => setPerson(p.email)} style={{ cursor: "pointer" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#111827")} onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
                   <td style={td}>
                     <div style={{ fontWeight: 700, color: "#e2e8f0" }}>{p.name || p.email}</div>
                     <div style={{ color: "#94a3b8", fontSize: 12 }}>{p.name ? p.email : ""}{p.phone ? (p.name ? " · " : "") + p.phone : ""}</div>
@@ -109,7 +127,7 @@ export default function PeoplePanel({ vertical }) {
                     {p.ndas > 0 && <div style={{ color: "#c084fc" }}>NDA ×{p.ndas}</div>}
                     {p.deal_room && <div style={{ color: "#4ade80" }}>Opened deal room</div>}
                   </td>
-                  <td style={{ ...td, whiteSpace: "nowrap" }}>
+                  <td style={{ ...td, whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
                     {listSlugs(p).filter((v) => VERTICALS.some((x) => x.slug === v)).map((v) => (
                       <ListToggle key={v} slug={v} status={p.lists?.[v]} showLabel={vertical === "all"} disabled={!configured || busy === p.email + v} onToggle={() => toggle(p, v)} />
                     ))}
@@ -117,8 +135,20 @@ export default function PeoplePanel({ vertical }) {
                   <td style={{ ...td, fontSize: 12, color: "#94a3b8" }}>{p.sources.join(", ")}</td>
                   <td style={{ ...td, fontSize: 12, color: "#94a3b8", maxWidth: 260 }}>{p.listings.slice(0, 3).join(", ")}{p.listings.length > 3 ? ` +${p.listings.length - 3}` : ""}</td>
                   <td style={{ ...td, fontSize: 12, color: "#94a3b8", whiteSpace: "nowrap" }}>{ago(p.last_at)}</td>
-                  <td style={{ ...td, fontSize: 12, whiteSpace: "nowrap" }}>
-                    {p.open_items > 0 && <a href="/queue" style={{ color: "#f87171", fontWeight: 700, textDecoration: "none" }}>{p.open_items} open →</a>}
+                  <td style={{ ...td, fontSize: 12, maxWidth: 320 }}>
+                    {p.needs_reply > 0 && (() => {
+                      const dt = dueTxt(p.next_due);
+                      return (
+                        <>
+                          <div style={{ whiteSpace: "nowrap" }}>
+                            <span style={{ color: "#f87171", fontWeight: 700 }}>{p.needs_reply} waiting →</span>
+                            {p.high && <span style={{ color: "#f87171", fontWeight: 700 }}> HIGH</span>}
+                            {dt && <span style={{ color: dt.c }}> · {dt.t}</span>}
+                          </div>
+                          {type === "open" && p.next_what && <div style={{ color: "#94a3b8", marginTop: 2 }}>{p.next_what}</div>}
+                        </>
+                      );
+                    })()}
                   </td>
                 </tr>
               ))}
@@ -127,6 +157,7 @@ export default function PeoplePanel({ vertical }) {
           {d.total > d.people.length && <div style={{ padding: 12, fontSize: 12, color: "#64748b" }}>Showing the {d.people.length} most recent of {d.total.toLocaleString()}. Search to narrow it down.</div>}
         </div>
       )}
+      {person && <PersonDrawer email={person} onClose={() => setPerson(null)} onChanged={() => setTick((t) => t + 1)} />}
     </div>
   );
 }
