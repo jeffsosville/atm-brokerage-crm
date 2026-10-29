@@ -74,6 +74,16 @@ export async function GET(request) {
   for (const e of inst.data || []) add({ at: e.received_at, type: "instantly", title: "Instantly: " + String(e.event_type || "").replace(/_/g, " "), detail: clip(e.payload?.reply_text || e.payload?.reply_subject || e.payload?.campaign_name, 200) });
   for (const s of subs.data || []) add({ at: s.status === "unsubscribed" ? s.unsubscribed_at || s.updated_at : s.subscribed_at || s.updated_at, type: "newsletter", title: `Weekly email (${s.vertical}): ${s.status}`, vertical: s.vertical });
 
+  // One event, one line. A campaign reply arrives as the email itself, as an Instantly "reply received"
+  // event, and as the Instantly queue item; an Instantly send also shows as the sent email. When the
+  // email is on the timeline, drop the Instantly copies that land within 15 minutes of it.
+  const near = (t, type) => timeline.some((x) => x.type === type && Math.abs(new Date(x.at) - new Date(t.at)) < 15 * 60e3);
+  const dupOfEmail = (t) =>
+    (t.type === "instantly" && /reply received|lead (not )?interested|lead unsubscribed/i.test(t.title) && near(t, "email_in")) ||
+    (t.type === "instantly" && /email sent/i.test(t.title) && near(t, "email_out")) ||
+    (t.type === "lead" && t.title.startsWith("Instantly") && near(t, "email_in"));
+  const kept = timeline.filter((t) => !dupOfEmail(t));
+  timeline.length = 0; timeline.push(...kept);
   timeline.sort((a, b) => b.at.localeCompare(a.at));
 
   const firstOf = (k) => [contact.data && k === "name" ? contact.data.name || [contact.data.first_name, contact.data.last_name].filter(Boolean).join(" ") : null,
