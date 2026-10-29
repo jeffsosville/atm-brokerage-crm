@@ -1,6 +1,7 @@
 import { adminDb as db } from "../../../../lib/serverAuth";
 import { draftAndSave, DRAFT_KINDS, shouldDraft } from "../../../../lib/inbox/draft";
 import { canDraftVertical } from "../../../../lib/inbox/draftBrand";
+import { learnRules } from "../../../../lib/inbox/learnRules";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -39,7 +40,10 @@ async function handler(request) {
       try { await draftAndSave(i); stats.drafted++; } catch (e) { stats.errors.push(`${i.id}: ${e.message}`); }
     }));
   }
-  return Response.json({ ok: true, ...stats });
+  // Then check a few of John's newly sent edits for industry-wide rules (suggested, never auto-applied)
+  let rules = null;
+  try { rules = await learnRules({ limit: Number(process.env.RULES_PER_RUN || 3) }); } catch (e) { rules = { error: e.message }; }
+  return Response.json({ ok: true, ...stats, rules });
 }
 export const GET = handler;
 export const POST = handler;

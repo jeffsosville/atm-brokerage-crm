@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { authFetch } from "../lib/authFetch";
 import { VerticalBadge, vMeta, VERTICALS } from "../lib/vertical";
 import PersonDrawer, { OpenItem } from "./PersonDrawer";
+import RulesPanel from "./RulesPanel";
 
 const ss = { background: "#1a1f2e", color: "#e2e8f0", border: "1px solid #334155", padding: "7px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" };
 const th = { padding: "10px 12px", textAlign: "left", color: "#475569", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px" };
@@ -103,6 +104,7 @@ export default function PeoplePanel({ vertical, mode = "contacts", initialType }
         </select>}
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email, company, phone…" style={{ ...ss, marginLeft: "auto", width: 300, alignSelf: "center" }} />
       </div>
+      {inbox && <RulesPanel vertical={vertical} />}
       {err && <div style={{ color: "#f87171" }}>{err}</div>}
       {!d && !err && <div style={{ padding: 40, textAlign: "center", color: "#475569" }}>Loading…</div>}
       {d && d.unmatched?.length > 0 && (
