@@ -59,12 +59,20 @@ async function run() {
     (data || []).forEach(setDealVertical);
   };
   const verticalOf = (route, dealId) => (dealId && dealVertical[dealId]) || route?.vertical_id || null;
-  // Fallback when no route/deal matched: the brand mailbox the email came from or went to
-  const BRAND_DOMAINS = [[/cleaningexits\.com/i, "cleaning"], [/vendingexits\.com/i, "vending"]];
   // Mail that arrived in a brand inbox (hello@cleaningexits.com...) belongs to that brand
   const boxes = await mailboxes();
   const boxVertical = (key) => (key && boxes[key] && boxes[key].vertical !== "atm" ? vIdBySlug[boxes[key].vertical] || null : null);
-  const brandVertical = (...addrs) => { const t = addrs.filter(Boolean).join(" "); const hit = BRAND_DOMAINS.find(([re]) => re.test(t)); return hit ? vIdBySlug[hit[1]] || null : null; };
+  // Fallback when no route/deal matched: mail SENT BY a brand's own inbox or its site notifications
+  // (info@vendingexits.com, hello@cleaningexits.com, notifications@cleaningexits.com) belongs to that brand.
+  // Only the sender counts: people cc a brand address on unrelated threads, and sales@vendingexits.com is
+  // Henry's working address for ATM, vending and cleaning deals alike, so it is never a brand signal.
+  const brandSenders = {};
+  for (const m of Object.values(boxes)) {
+    if (!m.vertical || m.vertical === "atm" || !m.address) continue;
+    brandSenders[m.address.toLowerCase()] = m.vertical;
+    brandSenders["notifications@" + m.address.split("@")[1].toLowerCase()] = m.vertical;
+  }
+  const brandVertical = (from) => { const v = brandSenders[String(from || "").trim().toLowerCase()]; return v ? vIdBySlug[v] || null : null; };
   const noteAsk = async (routeId, keys, at) => {
     if (!routeId || !keys?.length) return;
     const { error } = await db.rpc("dd_note_buyer_ask", { p_route: routeId, p_keys: keys, p_at: at });
@@ -173,7 +181,7 @@ async function run() {
       const dealId = mk?.res.deal_id || route?.deal_id || nda?.deal_id || null;
       await loadDealVerticals([dealId]);
       const { data: inserted, error } = await db.from("inbound_items").insert({
-        vertical_id: mk?.res.vertical_id || verticalOf(route, dealId) || boxVertical(e.mailbox) || brandVertical(e.from_email, e.to_email),
+        vertical_id: mk?.res.vertical_id || verticalOf(route, dealId) || boxVertical(e.mailbox) || brandVertical(e.from_email),
         mailbox: e.mailbox || null,
         lead_email: mk?.lead.email || null, lead_name: mk?.lead.name || null, lead_phone: mk?.lead.phone || null,
         lead_location: mk?.lead.zip || null, lead_channel: mk ? mk.lead.marketplace : null,
