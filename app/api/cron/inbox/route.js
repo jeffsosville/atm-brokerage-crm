@@ -81,7 +81,13 @@ async function run() {
   stats.emails_seen = emails?.length || 0;
 
   let claudeBudget = MAX_CLAUDE_PER_RUN;
-  const todo = (emails || []).map((e) => ({ e, pre: preFilter(e.from_email, e.subject) }))
+  // Instantly warmup mail is marked processed and never becomes a queue item
+  const warm = (emails || []).filter((e) => preFilter(e.from_email, e.subject, e.snippet).kind === "warmup");
+  if (warm.length) {
+    await db.from("atm_activity_log").update({ inbox_processed_at: now, classification: "warmup" }).in("id", warm.map((e) => e.id));
+    stats.warmup_skipped = warm.length;
+  }
+  const todo = (emails || []).filter((e) => !warm.includes(e)).map((e) => ({ e, pre: preFilter(e.from_email, e.subject, e.snippet) }))
     .filter(({ pre }) => pre.kind || claudeBudget-- > 0); // leave the rest for the next run
 
   const senders = [...new Set(todo.map(({ e }) => (e.from_email || "").toLowerCase()).filter(Boolean))];
@@ -105,6 +111,16 @@ async function run() {
     }
   });
 
+  // Open or recent Instantly reply for this sender with no Gmail thread yet (see the merge below)
+  const instantlyItemFor = async (sender) => {
+    if (!sender) return null;
+    const { data } = await db.from("inbound_items").select("id, thread_id, activity_id, last_message_at")
+      .eq("source", "instantly").ilike("lead_email", sender).is("thread_id", null)
+      .gte("received_at", new Date(Date.now() - 30 * 864e5).toISOString()).order("received_at", { ascending: false }).limit(1);
+    return data?.[0] || null;
+  };
+  let attach = null;
+
   // oldest first, so a thread's row ends up with its latest message
   for (const d of decided.filter(Boolean).sort((a, b) => new Date(a.e.created_at) - new Date(b.e.created_at))) {
     const { e, c, source } = d;
@@ -120,7 +136,7 @@ async function run() {
     // BizBuySell groups different buyers' leads for the same listing into one Gmail
     // thread, so marketplace leads are one row per email, never merged by thread.
     const { data: existing } = e.thread_id && source === "email"
-      ? await db.from("inbound_items").select("id, status, kind, last_message_at").eq("thread_id", e.thread_id).eq("source", "email").maybeSingle()
+      ? await db.from("inbound_items").select("id, status, kind, last_message_at").eq("thread_id", e.thread_id).in("source", ["email", "instantly"]).order("received_at").limit(1).maybeSingle()
       : { data: null };
 
     if (existing) {
@@ -134,6 +150,14 @@ async function run() {
       if (c.dd_items?.length) patch.dd_item_keys = c.dd_items;
       await db.from("inbound_items").update(patch).eq("id", existing.id);
       if (ASK_KINDS.includes(c.kind)) await noteAsk(route?.id, c.dd_items, e.created_at);
+      stats.merged++;
+    } else if (e.mailbox && e.thread_id && (attach = await instantlyItemFor(sender))) {
+      // A reply to an Instantly campaign: instantly-sync already made the queue item (no Gmail thread).
+      // Hang this email's thread on it so the draft lands in the brand inbox, in the thread, and the reply is seen.
+      await db.from("inbound_items").update({
+        thread_id: attach.thread_id || e.thread_id, mailbox: e.mailbox, activity_id: attach.activity_id || e.id,
+        last_message_at: e.created_at > attach.last_message_at ? e.created_at : attach.last_message_at, updated_at: now,
+      }).eq("id", attach.id);
       stats.merged++;
     } else {
       // Marketplace (BizBuySell) leads: route by the marketplace Listing ID → vertical/deal, and keep the buyer's details
