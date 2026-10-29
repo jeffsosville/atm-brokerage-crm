@@ -41,8 +41,10 @@ function ListToggle({ slug, status, disabled, onToggle, showLabel }) {
   );
 }
 
-export default function PeoplePanel({ vertical, initialType = "all" }) {
-  const [type, setType] = useState(initialType);
+// mode="inbox": the work list (Needs reply / Waiting on NDA / Done). mode="contacts": look anyone up.
+export default function PeoplePanel({ vertical, mode = "contacts", initialType }) {
+  const inbox = mode === "inbox";
+  const [type, setType] = useState(initialType || (inbox ? "open" : "all"));
   const [person, setPerson] = useState(null);
   const [tick, setTick] = useState(0);
   const [list, setList] = useState("all");
@@ -76,24 +78,29 @@ export default function PeoplePanel({ vertical, initialType = "all" }) {
   const box = (label, value, color, key) => (
     <div onClick={key ? () => setType(key) : undefined} style={{ background: "#111827", border: "1px solid " + (key && type === key ? "#3b82f6" : "#1e293b"), borderRadius: 8, padding: "12px 16px", minWidth: 120, cursor: key ? "pointer" : "default" }}>
       <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color: color || "#e2e8f0" }}>{value ?? "…"}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: color || "#e2e8f0" }}>{value ?? (d ? "→" : "…")}</div>
     </div>
   );
 
   return (
     <div style={{ padding: "16px 24px" }}>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        {box("Everyone", c.all, null, "all")}
-        {box("Buyers", c.buyers, "#60a5fa", "buyers")}
-        {box("Sellers", c.sellers, "#fb923c", "sellers")}
-        {box("Needs reply" + (c.overdue ? ` · ${c.overdue} overdue` : ""), c.open, "#f87171", "open")}
-        {box("On weekly email", c.subscribed, "#4ade80")}
-        <select value={list} onChange={(e) => setList(e.target.value)} style={{ ...ss, alignSelf: "center" }} title="Filter by weekly email list">
+        {inbox ? (<>
+          {box("Needs reply" + (c.overdue ? ` · ${c.overdue} overdue` : ""), c.open, "#f87171", "open")}
+          {box("Waiting on NDA", c.nda, "#c084fc", "nda")}
+          {box("Done (14 days)", null, "#4ade80", "done")}
+        </>) : (<>
+          {box("Everyone", c.all, null, "all")}
+          {box("Buyers", c.buyers, "#60a5fa", "buyers")}
+          {box("Sellers", c.sellers, "#fb923c", "sellers")}
+          {box("On weekly email", c.subscribed, "#4ade80")}
+        </>)}
+        {!inbox && <select value={list} onChange={(e) => setList(e.target.value)} style={{ ...ss, alignSelf: "center" }} title="Filter by weekly email list">
           <option value="all">Weekly email: everyone</option>
           <option value="subscribed">On the list</option>
           <option value="not_subscribed">Not on the list</option>
           <option value="unsubscribed">Unsubscribed</option>
-        </select>
+        </select>}
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email, company, phone…" style={{ ...ss, marginLeft: "auto", width: 300, alignSelf: "center" }} />
       </div>
       {err && <div style={{ color: "#f87171" }}>{err}</div>}
@@ -106,12 +113,12 @@ export default function PeoplePanel({ vertical, initialType = "all" }) {
           {d.unmatched.map((i) => <OpenItem key={i.id} i={i} onChange={() => setTick((t) => t + 1)} />)}
         </div>
       )}
-      {d && !d.people.length && <div style={{ padding: 40, textAlign: "center", color: "#475569" }}>No one here for {vMeta(vertical).label} with these filters.</div>}
+      {d && !d.people.length && <div style={{ padding: 40, textAlign: "center", color: "#475569" }}>{inbox && type === "open" ? `Nothing waiting on a reply for ${vMeta(vertical).label}.` : `No one here for ${vMeta(vertical).label} with these filters.`}</div>}
       {d && d.people.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead><tr style={{ borderBottom: "2px solid #1e293b", background: "#0f1219" }}>
-              {["Person", "Brand", "Role", "Weekly email", "How they came in", "Listings", "Last activity", ""].map((h) => <th key={h} style={th}>{h}</th>)}
+              {(inbox ? ["Person", "Brand", "Role", "How they came in", "Listings", "Last activity", "What's waiting"] : ["Person", "Brand", "Role", "Weekly email", "How they came in", "Listings", "Last activity", ""]).map((h) => <th key={h} style={th}>{h}</th>)}
             </tr></thead>
             <tbody>
               {d.people.map((p) => (
@@ -127,11 +134,11 @@ export default function PeoplePanel({ vertical, initialType = "all" }) {
                     {p.ndas > 0 && <div style={{ color: "#c084fc" }}>NDA ×{p.ndas}</div>}
                     {p.deal_room && <div style={{ color: "#4ade80" }}>Opened deal room</div>}
                   </td>
-                  <td style={{ ...td, whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
+                  {!inbox && <td style={{ ...td, whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
                     {listSlugs(p).filter((v) => VERTICALS.some((x) => x.slug === v)).map((v) => (
                       <ListToggle key={v} slug={v} status={p.lists?.[v]} showLabel={vertical === "all"} disabled={!configured || busy === p.email + v} onToggle={() => toggle(p, v)} />
                     ))}
-                  </td>
+                  </td>}
                   <td style={{ ...td, fontSize: 12, color: "#94a3b8" }}>{p.sources.join(", ")}</td>
                   <td style={{ ...td, fontSize: 12, color: "#94a3b8", maxWidth: 260 }}>{p.listings.slice(0, 3).join(", ")}{p.listings.length > 3 ? ` +${p.listings.length - 3}` : ""}</td>
                   <td style={{ ...td, fontSize: 12, color: "#94a3b8", whiteSpace: "nowrap" }}>{ago(p.last_at)}</td>
@@ -145,10 +152,12 @@ export default function PeoplePanel({ vertical, initialType = "all" }) {
                             {p.high && <span style={{ color: "#f87171", fontWeight: 700 }}> HIGH</span>}
                             {dt && <span style={{ color: dt.c }}> · {dt.t}</span>}
                           </div>
-                          {type === "open" && p.next_what && <div style={{ color: "#94a3b8", marginTop: 2 }}>{p.next_what}</div>}
+                          {inbox && p.next_what && <div style={{ color: "#94a3b8", marginTop: 2 }}>{p.next_what}</div>}
                         </>
                       );
                     })()}
+                    {!p.needs_reply && type === "nda" && <div style={{ color: "#c084fc" }}>NDA link sent, not signed{p.nda_what ? <div style={{ color: "#94a3b8", marginTop: 2 }}>{p.nda_what}</div> : null}</div>}
+                    {!p.needs_reply && type === "done" && <div style={{ color: "#4ade80" }}>Replied {ago(p.last_done_at)}{p.done_what ? <div style={{ color: "#94a3b8", marginTop: 2 }}>{p.done_what}</div> : null}</div>}
                   </td>
                 </tr>
               ))}

@@ -750,13 +750,16 @@ function CompanyDetail({ co, onClose, onUpdate, onCreateDeal }) {
 // ======================== MAIN CRM ========================
 
 export default function CRM() {
-  const [view, setView] = useState("crm"); // crm | people | pipeline | dealroom
-  const [peopleType, setPeopleType] = useState("all");
-  // Old /queue and /inbox links land here as ?view=people&type=open
+  // inbox = the work list (default) · people / crm = Contacts (people or companies) · pipeline · dealroom
+  const [view, setView] = useState("inbox");
+  const [inboxType, setInboxType] = useState("open");
+  // Old /queue and /inbox links land here as ?view=inbox&type=open
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
-      if (sp.get("view") === "people") { setView("people"); setPeopleType(sp.get("type") || "all"); }
+      const v = sp.get("view");
+      if (v === "inbox" || v === "people") { setView(v); if (sp.get("type")) setInboxType(sp.get("type")); }
+      else if (v === "companies") setView("crm");
     } catch {}
   }, []);
   const [companies, setCompanies] = useState([]);
@@ -1000,8 +1003,8 @@ export default function CRM() {
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.5px" }}>Sosville <span style={{ color: "#3b82f6", fontWeight: 400 }}>CRM</span></h1>
             <VerticalSelect value={vertical} onChange={(v) => { setVertical(v); setSelected(null); setPage(0); }} locked={verticalLocked} />
             <div style={{ display: "flex", gap: 4 }}>
-              <button onClick={() => { setView("crm"); setSelected(null); }} style={tabStyle(view === "crm")}>Companies</button>
-              <button onClick={() => { setView("people"); setSelected(null); }} style={tabStyle(view === "people")}>👥 People &amp; Inbox</button>
+              <button onClick={() => { setView("inbox"); setSelected(null); }} style={tabStyle(view === "inbox")}>📥 Inbox</button>
+              <button onClick={() => { setView("people"); setSelected(null); }} style={tabStyle(view === "people" || view === "crm")}>🔎 Contacts</button>
               <button onClick={() => { setView("pipeline"); setSelected(null); }} style={tabStyle(view === "pipeline")}>Pipeline</button>
               <button onClick={() => { setView("dealroom"); setSelected(null); }} style={tabStyle(view === "dealroom")}>🤖 Deal Room</button>
               <button onClick={() => window.location.href="/todos"} style={tabStyle(false)}>✅ Tasks</button>
@@ -1090,11 +1093,18 @@ export default function CRM() {
         </>)}
       </div>
 
+      {/* Contacts: people or companies */}
+      {(view === "people" || view === "crm") && (
+        <div style={{ display: "flex", gap: 4, padding: "12px 24px 0" }}>
+          <button onClick={() => { setView("people"); setSelected(null); }} style={tabStyle(view === "people")}>People</button>
+          <button onClick={() => { setView("crm"); setSelected(null); }} style={tabStyle(view === "crm")}>Companies</button>
+        </div>
+      )}
       {/* Content */}
-      {view === "dealroom" ? <DealRoomPanel /> : view === "pipeline" ? <Pipeline vertical={vertical} /> : view === "people" ? <PeoplePanel key={peopleType} vertical={vertical} initialType={peopleType} /> : !companiesForBrand ? (
+      {view === "dealroom" ? <DealRoomPanel /> : view === "pipeline" ? <Pipeline vertical={vertical} /> : view === "inbox" ? <PeoplePanel key={"inbox-" + inboxType} mode="inbox" vertical={vertical} initialType={inboxType} /> : view === "people" ? <PeoplePanel mode="contacts" vertical={vertical} /> : !companiesForBrand ? (
         <div style={{ padding: 48, textAlign: "center", color: "#64748b", fontSize: 14, lineHeight: 1.7 }}>
           Companies is the ATM operator directory, so there's nothing here for {vMeta(vertical).label} yet.<br />
-          {vMeta(vertical).label} sellers, buyers and NDA signers are under <a onClick={() => setView("people")} style={{ color: "#60a5fa", cursor: "pointer" }}>👥 People</a>; new leads are in <a href="/queue" style={{ color: "#60a5fa" }}>📥 Inbound</a>.
+          {vMeta(vertical).label} sellers, buyers and NDA signers are under <a onClick={() => setView("people")} style={{ color: "#60a5fa", cursor: "pointer" }}>People</a>; new leads are in <a onClick={() => setView("inbox")} style={{ color: "#60a5fa", cursor: "pointer" }}>📥 Inbox</a>.
         </div>
       ) : (
         <div style={{ overflowX: "auto", marginRight: selected ? 460 : 0, transition: "margin 0.2s" }}>

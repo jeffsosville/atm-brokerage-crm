@@ -1,6 +1,7 @@
 import { adminDb as db, getUser, unauthorized } from "../../../../lib/serverAuth";
 import { verticalFromRequest, verticalMaps } from "../../../../lib/verticalServer";
 import { isOwnAddress, personEmailFor } from "../../../../lib/ownAddresses";
+import { mailboxes, itemLinks } from "../../../../lib/mailboxes";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -9,9 +10,9 @@ const OPEN = ["new", "drafted", "awaiting_john", "awaiting_nda"];
 const NEEDS_REPLY = ["new", "drafted", "awaiting_john"];
 const SKIP_KINDS = ["internal", "automated", "spam", "vendor"];
 const PAGE = 2000;
-const INB_COLS = "id, lead_email, from_email, lead_name, from_name, lead_phone, lead_business, kind, status, source, received_at, vertical_id, due_at, priority, summary, subject, snippet, route_id, thread_id, draft_text, draft_error, draft_notes, draft_mailbox, draft_pushed_at, must_go_to_john, suggested_action";
+const INB_COLS = "id, lead_email, from_email, lead_name, from_name, lead_phone, lead_business, kind, status, source, received_at, vertical_id, due_at, priority, summary, subject, snippet, route_id, thread_id, draft_text, draft_error, draft_notes, draft_mailbox, draft_pushed_at, draft_thread_id, mailbox, must_go_to_john, suggested_action, updated_at, first_response_at";
 
-// GET /api/admin/people?vertical=all|atm|vending|cleaning&type=all|buyers|sellers|open&list=all|subscribed|not_subscribed|unsubscribed&q=
+// GET /api/admin/people?vertical=all|atm|vending|cleaning&type=all|buyers|sellers|open|nda|done&list=all|subscribed|not_subscribed|unsubscribed&q=
 // Everyone who has dealt with a brand — NDA signers, deal-room buyers, and inbound leads —
 // merged into one row per email address.
 export async function GET(request) {
@@ -84,6 +85,8 @@ export async function GET(request) {
     p.verticals.add(vslug(i.vertical_id)); p.roles.add(i.kind === "seller_lead" ? "seller" : "buyer");
     p.sources.add({ website_form: "Website", marketplace: "BizBuySell", email: "Email", drift_chat: "Chat", cold_call: "Cold call", deal_room: "Deal room" }[i.source] || i.source);
     if (OPEN.includes(i.status)) p.open_items++;
+    if (i.status === "awaiting_nda") { p.awaiting_nda = (p.awaiting_nda || 0) + 1; if (!p.nda_what) p.nda_what = i.summary || i.subject || null; }
+    if (i.status === "replied") { const t = i.first_response_at || i.updated_at; if (t && (!p.last_done_at || t > p.last_done_at)) { p.last_done_at = t; p.done_what = i.summary || i.subject || null; } }
     if (NEEDS_REPLY.includes(i.status)) {
       p.needs_reply = (p.needs_reply || 0) + 1;
       if (i.priority === "high") p.high = true;
@@ -107,7 +110,7 @@ export async function GET(request) {
   if (search) rows = rows.filter((p) => [p.email, p.name, p.company, p.phone].some((v) => (v || "").toLowerCase().includes(search)));
   const onList = (p) => (vert ? p.lists[vert.slug] === "subscribed" : Object.values(p.lists).includes("subscribed"));
   const offList = (p) => (vert ? p.lists[vert.slug] === "unsubscribed" : Object.values(p.lists).includes("unsubscribed") && !onList(p));
-  const counts = { subscribed: rows.filter(onList).length, all: rows.length, buyers: rows.filter((p) => p.roles.includes("buyer")).length, sellers: rows.filter((p) => p.roles.includes("seller")).length, open: rows.filter((p) => p.needs_reply > 0).length, overdue: rows.filter((p) => p.next_due && p.next_due < new Date().toISOString()).length };
+  const counts = { subscribed: rows.filter(onList).length, all: rows.length, buyers: rows.filter((p) => p.roles.includes("buyer")).length, sellers: rows.filter((p) => p.roles.includes("seller")).length, open: rows.filter((p) => p.needs_reply > 0).length, nda: rows.filter((p) => p.awaiting_nda > 0 && !p.needs_reply).length, overdue: rows.filter((p) => p.next_due && p.next_due < new Date().toISOString()).length };
   if (list === "subscribed") rows = rows.filter(onList);
   if (list === "not_subscribed") rows = rows.filter((p) => !onList(p) && !offList(p));
   if (list === "unsubscribed") rows = rows.filter(offList);
@@ -117,6 +120,14 @@ export async function GET(request) {
     // The reply queue: people with something waiting on us, most overdue first
     rows = rows.filter((p) => p.needs_reply > 0);
     rows.sort((a, b) => (b.high ? 1 : 0) - (a.high ? 1 : 0) || (a.next_due || "9").localeCompare(b.next_due || "9"));
+  } else if (type === "nda") {
+    // BizBuySell and other leads that got the NDA link and haven't signed yet
+    rows = rows.filter((p) => p.awaiting_nda > 0 && !p.needs_reply);
+    rows.sort((a, b) => (b.last_at || "").localeCompare(a.last_at || ""));
+  } else if (type === "done") {
+    const since = new Date(Date.now() - 14 * 864e5).toISOString();
+    rows = rows.filter((p) => p.last_done_at && p.last_done_at > since && !p.needs_reply);
+    rows.sort((a, b) => b.last_done_at.localeCompare(a.last_done_at));
   } else rows.sort((a, b) => (b.last_at || "").localeCompare(a.last_at || ""));
 
   const rIds = [...new Set(unmatched.map((i) => i.route_id).filter(Boolean))];
@@ -127,6 +138,6 @@ export async function GET(request) {
 
   return Response.json({
     total: rows.length, counts, people: rows.slice(0, 500),
-    unmatched: type === "open" ? unmatched.map((i) => ({ ...i, route: rmap[i.route_id] || null, vertical: slugById[i.vertical_id] || null })) : [],
+    unmatched: type === "open" ? await (async () => { const boxes = await mailboxes(); return unmatched.map((i) => ({ ...i, ...itemLinks(boxes, i), route: rmap[i.route_id] || null, vertical: slugById[i.vertical_id] || null })); })() : [],
   });
 }

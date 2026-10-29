@@ -1,5 +1,6 @@
 import { adminDb as db, getUser, unauthorized } from "../../../../lib/serverAuth";
 import { verticalMaps } from "../../../../lib/verticalServer";
+import { mailboxes, emailLink, itemLinks } from "../../../../lib/mailboxes";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -8,9 +9,6 @@ const OPEN = ["new", "drafted", "awaiting_john", "awaiting_nda"];
 const SRC = { website_form: "Website form", marketplace: "BizBuySell", email: "Email", drift_chat: "Website chat", cold_call: "Cold call", deal_room: "Deal room", listing: "Listing page", nda: "NDA", instantly: "Instantly" };
 
 const clip = (s, n) => { const t = String(s || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n) + "…" : t; };
-const gmailLink = (threadId, addrs) => threadId
-  ? `https://mail.google.com/mail/u/?authuser=${/john@atmbrokerage\.com/i.test(addrs || "") ? "john" : "info"}@atmbrokerage.com#all/${threadId}`
-  : null;
 
 // GET /api/admin/person?email=x — one person: who they are, what is waiting on us, and every touch, newest first.
 export async function GET(request) {
@@ -18,6 +16,7 @@ export async function GET(request) {
   const email = (new URL(request.url).searchParams.get("email") || "").trim().toLowerCase();
   if (!email.includes("@")) return Response.json({ error: "email required" }, { status: 400 });
   const { slugById } = await verticalMaps();
+  const boxes = await mailboxes();
   const like = email.replace(/[%_,()]/g, "");
 
   const { data: ce } = await db.from("contact_emails").select("contact_id").eq("email", email).maybeSingle();
@@ -28,7 +27,7 @@ export async function GET(request) {
 
   const [contact, acts, inb, nda, tok, inst, subs] = await Promise.all([
     contactId ? db.from("atm_contacts").select("id, name, first_name, last_name, phone, company_id, atm_companies(company_name)").eq("id", contactId).maybeSingle() : { data: null },
-    db.from("atm_activity_log").select("id, type, direction, from_email, to_email, subject, snippet, thread_id, created_at")
+    db.from("atm_activity_log").select("id, type, direction, from_email, to_email, subject, snippet, thread_id, created_at, mailbox")
       .or(actFilter.join(",")).in("type", ["email_received", "email_sent"]).order("created_at", { ascending: false }).limit(150),
     db.from("inbound_items").select("*").or(`lead_email.ilike.${like},from_email.ilike.${like},summary.ilike.%${like}%,snippet.ilike.%${like}%`).order("received_at", { ascending: false }).limit(100),
     db.from("nda_signatures").select("id, name, phone, company, listing_slug, signed_at, vertical_id").ilike("email", like).order("signed_at", { ascending: false }).limit(100),
@@ -55,7 +54,7 @@ export async function GET(request) {
   for (const a of acts.data || []) {
     const out = a.type === "email_sent";
     add({ at: a.created_at, type: out ? "email_out" : "email_in", title: a.subject || "(no subject)", detail: clip(a.snippet, 220),
-      who: out ? a.to_email : a.from_email, link: gmailLink(a.thread_id, `${a.from_email} ${a.to_email}`) });
+      who: out ? a.to_email : a.from_email, link: emailLink(boxes, a) });
   }
   // Leads that didn't arrive as an email we already list (forms, BizBuySell, chat, deal room, cold calls)
   for (const i of items) {
@@ -96,7 +95,7 @@ export async function GET(request) {
       seller: items.some((i) => i.kind === "seller_lead"),
       buyer: (nda.data || []).length > 0 || tokens.length > 0 || items.some((i) => ["buyer_question", "data_room", "marketplace_lead", "offer"].includes(i.kind)),
     },
-    open: items.filter((i) => OPEN.includes(i.status)).map((i) => ({ ...i, route: rmap[i.route_id] || null, vertical: slugById[i.vertical_id] || null })),
+    open: items.filter((i) => OPEN.includes(i.status)).map((i) => ({ ...i, ...itemLinks(boxes, i), route: rmap[i.route_id] || null, vertical: slugById[i.vertical_id] || null })),
     timeline: timeline.slice(0, 300),
   });
 }

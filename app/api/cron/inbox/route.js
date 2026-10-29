@@ -1,4 +1,5 @@
 import { adminDb as db } from "../../../../lib/serverAuth";
+import { mailboxes } from "../../../../lib/mailboxes";
 import { preFilter, classifyEmail, mapQuestionToDD, NON_ACTIONABLE, INTERNAL } from "../../../../lib/inbox/classify";
 import { dueAtFor } from "../../../../lib/inbox/sla";
 import { parseMarketplaceLead, resolveMarketplaceLead, marketplaceReply, shouldAutoReply, sendMarketplaceReply } from "../../../../lib/inbox/marketplace";
@@ -60,6 +61,9 @@ async function run() {
   const verticalOf = (route, dealId) => (dealId && dealVertical[dealId]) || route?.vertical_id || null;
   // Fallback when no route/deal matched: the brand mailbox the email came from or went to
   const BRAND_DOMAINS = [[/cleaningexits\.com/i, "cleaning"], [/vendingexits\.com/i, "vending"]];
+  // Mail that arrived in a brand inbox (hello@cleaningexits.com...) belongs to that brand
+  const boxes = await mailboxes();
+  const boxVertical = (key) => (key && boxes[key] && boxes[key].vertical !== "atm" ? vIdBySlug[boxes[key].vertical] || null : null);
   const brandVertical = (...addrs) => { const t = addrs.filter(Boolean).join(" "); const hit = BRAND_DOMAINS.find(([re]) => re.test(t)); return hit ? vIdBySlug[hit[1]] || null : null; };
   const noteAsk = async (routeId, keys, at) => {
     if (!routeId || !keys?.length) return;
@@ -70,7 +74,7 @@ async function run() {
   // ---- 1. New emails -------------------------------------------------------
   const since = new Date(Date.now() - BACKFILL_DAYS * 864e5).toISOString();
   const { data: emails, error: eErr } = await db.from("atm_activity_log")
-    .select("id, from_email, to_email, subject, snippet, thread_id, created_at, contact_id")
+    .select("id, from_email, to_email, subject, snippet, thread_id, created_at, contact_id, mailbox")
     .eq("type", "email_received").is("inbox_processed_at", null).gte("created_at", since)
     .order("created_at", { ascending: false }).limit(80);
   if (eErr) throw eErr;
@@ -145,7 +149,8 @@ async function run() {
       const dealId = mk?.res.deal_id || route?.deal_id || nda?.deal_id || null;
       await loadDealVerticals([dealId]);
       const { data: inserted, error } = await db.from("inbound_items").insert({
-        vertical_id: mk?.res.vertical_id || verticalOf(route, dealId) || brandVertical(e.from_email, e.to_email),
+        vertical_id: mk?.res.vertical_id || verticalOf(route, dealId) || boxVertical(e.mailbox) || brandVertical(e.from_email, e.to_email),
+        mailbox: e.mailbox || null,
         lead_email: mk?.lead.email || null, lead_name: mk?.lead.name || null, lead_phone: mk?.lead.phone || null,
         lead_location: mk?.lead.zip || null, lead_channel: mk ? mk.lead.marketplace : null,
         notes: mk ? [mk.lead.listingId && `${mk.lead.marketplace} listing ${mk.lead.listingId}`, mk.lead.headline, mk.lead.invest && `Able to invest: ${mk.lead.invest}`, mk.lead.timeline && `Purchase within: ${mk.lead.timeline}`, `Routed by ${mk.res.via}`].filter(Boolean).join(" · ") : null,
@@ -389,16 +394,19 @@ async function run() {
   }
 
   // ---- 3. Reply detection ----------------------------------------------------
-  const { data: open } = await db.from("inbound_items").select("id, source, thread_id, last_message_at, deal_question_id").in("status", OPEN);
-  const emailOpen = (open || []).filter((o) => o.thread_id);
+  const { data: open } = await db.from("inbound_items").select("id, source, thread_id, draft_thread_id, last_message_at, deal_question_id").in("status", OPEN);
+  // A reply can be in the thread the email came in on, or in the thread the draft was created in
+  // (a brand-inbox draft for an email that arrived somewhere else starts its own thread)
+  const threadsOf = (o) => [o.thread_id, o.draft_thread_id].filter(Boolean);
+  const emailOpen = (open || []).filter((o) => threadsOf(o).length);
   for (let i = 0; i < emailOpen.length; i += 100) {
     const chunk = emailOpen.slice(i, i + 100);
     const { data: sent } = await db.from("atm_activity_log").select("thread_id, created_at")
-      .in("type", ["email_sent", "followup_sent"]).in("thread_id", chunk.map((o) => o.thread_id));
+      .in("type", ["email_sent", "followup_sent"]).in("thread_id", chunk.flatMap(threadsOf));
     const lastSent = {};
     (sent || []).forEach((s) => { if (!lastSent[s.thread_id] || s.created_at > lastSent[s.thread_id]) lastSent[s.thread_id] = s.created_at; });
     for (const o of chunk) {
-      const s = lastSent[o.thread_id];
+      const s = threadsOf(o).map((t) => lastSent[t]).filter(Boolean).sort().pop();
       if (s && new Date(s) > new Date(o.last_message_at)) {
         await db.from("inbound_items").update({ status: "replied", first_response_at: s, updated_at: now, updated_by: "auto: reply seen" }).eq("id", o.id).is("first_response_at", null);
         await db.from("inbound_items").update({ status: "replied", updated_at: now }).eq("id", o.id).in("status", OPEN);

@@ -178,7 +178,7 @@ Append a one-paragraph entry here every time something non-obvious breaks. Date 
 Every inquiry gets a row in `inbound_items`, an owner and a reply deadline.
 
 - **Trigger:** Supabase `pg_cron` job `inbox-every-15-min` POSTs to `/api/cron/inbox` with header `x-cron-secret` (= `CRON_SECRET`). Responses land in `net._http_response`.
-- **Input:** emails already synced into `atm_activity_log` by `gmail_sync.py` (cron on Jeff's Mac, every 30 min; info@ only). Plus unanswered deal-room escalations from `deal_questions`.
+- **Input:** emails already synced into `atm_activity_log` by `gmail_sync.py` (cron on Jeff's Mac in `~/Desktop/atm-crm`, every 30 min; every active mailbox in `crm_mailboxes`). Plus unanswered deal-room escalations from `deal_questions`.
 - **Classifier:** `lib/inbox/classify.js`. Obvious automated senders are closed without an AI call. Mail from our own domains is still read (forwarded leads, Drift contacts) unless it's a system report.
 - **Deadlines:** `lib/inbox/sla.js`, in business hours (Mon–Fri 9–5 ET).
 - **Reply detection:** an `email_sent` in the same Gmail thread marks the item replied. Deal-room items clear when answered in the deal room.
@@ -261,3 +261,13 @@ All BizBuySell listings (any vertical) should send leads to info@, the one inbox
 - **Email drafts:** same scan; a hit sets "Needs John" with a "CHECK BEFORE SENDING" note. The drafter is told John's past answers may contain NDA-only details.
 - **Admin API routes** (`/api/admin/*` except dd/people/inbound/daily-digest which already checked, `/api/broker/upload`, `/api/gmail/*`, `/api/todos`) require `requireStaff()`: a staff session, or header `x-internal-secret` = `INBOX_CRON_SECRET`/`CRON_SECRET` for server-to-server calls.
 - **Never put in a deal room:** location address lists, merchant names, tax returns, bank statements, W-9s. Share those directly after an accepted offer.
+
+
+## Mailboxes (one Gmail inbox per brand)
+
+Table `crm_mailboxes` lists every inbox the CRM syncs and drafts into: `info` (info@atmbrokerage.com) and `john` for ATM, `cleaning` (hello@cleaningexits.com), `vending` (info@vendingexits.com).
+
+- **Sync:** `gmail_sync.py` (Jeff's Mac, `~/Desktop/atm-crm`, crontab every 30 min with `--inbox both` = all active mailboxes) reads each mailbox with its own token `token_<key>.pickle`, tags every email with `atm_activity_log.mailbox`, and skips an email already imported from another mailbox (same `message_id`). Mail that arrives in a brand inbox is tagged with that brand.
+- **Drafts:** brand drafts (`lib/inbox/draftBrand.js`) set `inbound_items.draft_mailbox` to the brand mailbox once `crm_mailboxes.connected_at` is set (the sync sets it on its first successful run); until then they fall back to info@. `gmail_draft_push.py` creates the draft in that inbox, in the thread if the email reached that inbox, otherwise as a new email from it, with the brand signature from `crm_mailboxes.signature_text/html`. The draft's thread is saved in `inbound_items.draft_thread_id`; a reply sent there marks the item replied.
+- **Add a brand inbox:** insert a `crm_mailboxes` row (key, address, vertical, signatures), then on the Mac: `python3 gmail_auth.py <key>` (sign in as that mailbox) and `python3 gmail_sync.py --inbox <key> --days 30`.
+- **Sign-in expired:** `python3 gmail_auth.py <key>` again. `sync.log` says `No valid token at token_<key>.pickle` when it happens.

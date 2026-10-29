@@ -41,7 +41,7 @@ export function OpenItem({ i, onChange }) {
     catch (e) { alert(e.message); }
     setBusy("");
   };
-  const g = gmail(i);
+  const g = i.gmail_url || gmail(i);
   return (
     <div style={{ border: "1px solid " + (i.priority === "high" ? "#7f1d1d" : "#334155"), borderRadius: 8, padding: 12, marginBottom: 10, background: "#111827" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
@@ -58,7 +58,7 @@ export function OpenItem({ i, onChange }) {
         <div style={{ marginTop: 8, border: "1px solid " + (i.must_go_to_john ? "#7f1d1d" : "#1e293b"), borderRadius: 6, padding: 10, background: "rgba(96,165,250,0.05)" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#60a5fa", marginBottom: 4 }}>
             Draft reply {i.must_go_to_john && <span style={{ color: "#f87171" }}>· Needs John</span>}
-            <span style={{ color: "#64748b", fontWeight: 400 }}> · {i.draft_pushed_at ? `in ${i.draft_mailbox}@ Gmail Drafts` : "goes to Gmail Drafts at the next sync"}</span>
+            <span style={{ color: "#64748b", fontWeight: 400 }}> · {i.draft_pushed_at ? `in ${i.draft_address || i.draft_mailbox + "@"} Gmail Drafts` : `goes to ${i.draft_address || "Gmail"} Drafts at the next sync`}</span>
           </div>
           {i.draft_notes && <div style={{ fontSize: 12, color: "#fbbf24", marginBottom: 4 }}>{i.draft_notes}</div>}
           <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.45, color: "#e2e8f0" }}>{i.draft_text}</div>
