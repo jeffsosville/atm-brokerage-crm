@@ -42,6 +42,38 @@ function ListToggle({ slug, status, disabled, onToggle, showLabel }) {
   );
 }
 
+// Strategic partners: people at companies that refer sellers, buyers and ExitsIQ clients.
+function PartnersTable({ pd, vertical }) {
+  if (!pd) return <div style={{ padding: 40, textAlign: "center", color: "#475569" }}>Loading…</div>;
+  if (!pd.partners.length) return <div style={{ padding: 40, textAlign: "center", color: "#475569" }}>No strategic partners for {vMeta(vertical).label} yet.</div>;
+  const link = { color: "#60a5fa", textDecoration: "none" };
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead><tr style={{ borderBottom: "2px solid #1e293b", background: "#0f1219" }}>
+          {["Person", "Brand", "Company", "Title", "Email / phone", "LinkedIn"].map((h) => <th key={h} style={th}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {pd.partners.map((p) => (
+            <tr key={p.id}>
+              <td style={{ ...td, fontWeight: 700, color: "#e2e8f0" }}>{p.name || p.email || "—"}</td>
+              <td style={td}><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{p.verticals.map((v) => <VerticalBadge key={v} slug={v} />)}</div></td>
+              <td style={{ ...td, color: "#cbd5e1" }}>{p.company}</td>
+              <td style={{ ...td, fontSize: 12, color: "#94a3b8", maxWidth: 260 }}>{p.title}</td>
+              <td style={{ ...td, fontSize: 12 }}>
+                {p.email && <div><a href={`mailto:${p.email}`} style={link}>{p.email}</a></div>}
+                {p.phone && <div style={{ color: "#94a3b8" }}>{p.phone}</div>}
+                {!p.email && !p.phone && <span style={{ color: "#475569" }}>—</span>}
+              </td>
+              <td style={{ ...td, fontSize: 12 }}>{p.source_url ? <a href={p.source_url} target="_blank" rel="noreferrer" style={link}>Profile</a> : <span style={{ color: "#475569" }}>—</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // mode="inbox": the work list (Needs reply / Waiting on NDA / Done). mode="contacts": look anyone up.
 export default function PeoplePanel({ vertical, mode = "contacts", initialType }) {
   const inbox = mode === "inbox";
@@ -62,6 +94,13 @@ export default function PeoplePanel({ vertical, mode = "contacts", initialType }
     authFetch(`/api/admin/people?vertical=${vertical}&type=${type}&list=${list}&q=${encodeURIComponent(query)}`).then(setD).catch((e) => setErr(e.message));
   }, [vertical, type, list, query, tick]);
   useEffect(() => { authFetch("/api/admin/subscriptions").then((r) => setConfigured(!!r.configured)).catch(() => {}); }, []);
+  // Strategic partners live in their own list (atm_master_contacts), not in the people feed
+  const [pd, setPd] = useState(null);
+  useEffect(() => {
+    if (inbox) return;
+    authFetch(`/api/admin/partners?vertical=${vertical}&q=${encodeURIComponent(query)}`).then(setPd).catch(() => setPd({ total: 0, partners: [] }));
+  }, [vertical, query, inbox]);
+  const showPeople = type !== "partners";
 
   async function toggle(p, slug) {
     const cur = p.lists?.[slug];
@@ -95,6 +134,7 @@ export default function PeoplePanel({ vertical, mode = "contacts", initialType }
           {box("Buyers", c.buyers, "#60a5fa", "buyers")}
           {box("Sellers", c.sellers, "#fb923c", "sellers")}
           {box("On weekly email", c.subscribed, "#4ade80")}
+          {box("Partners", pd?.total, "#a78bfa", "partners")}
         </>)}
         {!inbox && <select value={list} onChange={(e) => setList(e.target.value)} style={{ ...ss, alignSelf: "center" }} title="Filter by weekly email list">
           <option value="all">Weekly email: everyone</option>
@@ -106,7 +146,8 @@ export default function PeoplePanel({ vertical, mode = "contacts", initialType }
       </div>
       {inbox && <RulesPanel vertical={vertical} />}
       {err && <div style={{ color: "#f87171" }}>{err}</div>}
-      {!d && !err && <div style={{ padding: 40, textAlign: "center", color: "#475569" }}>Loading…</div>}
+      {!showPeople && <PartnersTable pd={pd} vertical={vertical} />}
+      {showPeople && !d && !err &&<div style={{ padding: 40, textAlign: "center", color: "#475569" }}>Loading…</div>}
       {d && d.unmatched?.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 10, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "1px", fontWeight: 700, marginBottom: 8 }}>
@@ -115,8 +156,8 @@ export default function PeoplePanel({ vertical, mode = "contacts", initialType }
           {d.unmatched.map((i) => <OpenItem key={i.id} i={i} onChange={() => setTick((t) => t + 1)} />)}
         </div>
       )}
-      {d && !d.people.length && <div style={{ padding: 40, textAlign: "center", color: "#475569" }}>{inbox && type === "open" ? `Nothing waiting on a reply for ${vMeta(vertical).label}.` : `No one here for ${vMeta(vertical).label} with these filters.`}</div>}
-      {d && d.people.length > 0 && (
+      {showPeople && d && !d.people.length &&<div style={{ padding: 40, textAlign: "center", color: "#475569" }}>{inbox && type === "open" ? `Nothing waiting on a reply for ${vMeta(vertical).label}.` : `No one here for ${vMeta(vertical).label} with these filters.`}</div>}
+      {showPeople && d && d.people.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead><tr style={{ borderBottom: "2px solid #1e293b", background: "#0f1219" }}>
