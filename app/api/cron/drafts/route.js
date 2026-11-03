@@ -25,7 +25,7 @@ async function handler(request) {
   const since = new Date(Date.now() - Math.max(LOOKBACK_DAYS, FORM_LOOKBACK_DAYS) * 864e5).toISOString();
   const emailSince = Date.now() - LOOKBACK_DAYS * 864e5;
   const { data: items, error } = await db.from("inbound_items").select("*")
-    .in("status", ["new", "drafted"]).in("kind", DRAFT_KINDS).in("source", ["email", "deal_room", "website_form"])
+    .in("status", ["new", "drafted"]).in("kind", DRAFT_KINDS).in("source", ["email", "deal_room", "website_form", "drift_chat"])
     .gte("last_message_at", since).order("last_message_at", { ascending: false }).limit(150);
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
@@ -33,7 +33,9 @@ async function handler(request) {
   const { data: verts } = await db.from("verticals").select("id, slug");
   const slugOf = Object.fromEntries((verts || []).map((v) => [v.id, v.slug]));
   const hasDrafter = (i) => canDraftVertical(i.vertical_id ? slugOf[i.vertical_id] : "atm");
-  const todo = (items || []).filter((i) => hasDrafter(i) && (i.source === "website_form" || new Date(i.last_message_at).getTime() >= emailSince) && shouldDraft(i) && (!i.draft_generated_at || new Date(i.last_message_at) > new Date(i.draft_generated_at))).slice(0, MAX_PER_RUN);
+  // Website chat leads: only the new chat (captured_by site_chat), never the old Drift import.
+  const isChat = (i) => i.source === "drift_chat";
+  const todo = (items || []).filter((i) => (!isChat(i) || i.captured_by === "site_chat") && hasDrafter(i) && (i.source === "website_form" || isChat(i) || new Date(i.last_message_at).getTime() >= emailSince) && shouldDraft(i) && (!i.draft_generated_at || new Date(i.last_message_at) > new Date(i.draft_generated_at))).slice(0, MAX_PER_RUN);
   const stats = { candidates: todo.length, drafted: 0, errors: [] };
   for (let k = 0; k < todo.length; k += 3) {
     await Promise.all(todo.slice(k, k + 3).map(async (i) => {

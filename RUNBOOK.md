@@ -271,3 +271,13 @@ Table `crm_mailboxes` lists every inbox the CRM syncs and drafts into: `info` (i
 - **Drafts:** brand drafts (`lib/inbox/draftBrand.js`) set `inbound_items.draft_mailbox` to the brand mailbox once `crm_mailboxes.connected_at` is set (the sync sets it on its first successful run); until then they fall back to info@. `gmail_draft_push.py` creates the draft in that inbox, in the thread if the email reached that inbox, otherwise as a new email from it, with the brand signature from `crm_mailboxes.signature_text/html`. The draft's thread is saved in `inbound_items.draft_thread_id`; a reply sent there marks the item replied.
 - **Add a brand inbox:** insert a `crm_mailboxes` row (key, address, vertical, signatures), then on the Mac: `python3 gmail_auth.py <key>` (sign in as that mailbox) and `python3 gmail_sync.py --inbox <key> --days 30`.
 - **Sign-in expired:** `python3 gmail_auth.py <key>` again. `sync.log` says `No valid token at token_<key>.pickle` when it happens.
+
+## Website chat (replaces Drift, added Nov 2026)
+- **Embed:** one script tag per site, before `</body>`, in place of the Drift snippet:
+  `<script src="https://atm-brokerage-crm.vercel.app/chat.js" data-brand="atm" defer></script>` (`vending` / `cleaning` for the other brands). `data-teaser="off"` hides the "Ask me" bubble.
+- **How it works:** `public/chat.js` shows the button and loads `/chat` in an iframe. `/chat` talks to `/api/site-chat`, which keeps the conversation in `site_chat_sessions` (the browser only sends its new message). The brain is `lib/siteChat.js`.
+- **What it knows (public only, no NDA):** the listing on the current page (`atm_routes` by `wp_slug`, or `inhouse_listings` by slug), public DD answers, live inventory, ATM machines from the WooCommerce Store API (cached 1h), John's generic `email_qa` answers and `draft_rules`. Replies pass `findConfidential` before the visitor sees them.
+- **Leads:** once the visitor types an email or phone, the chat becomes an `inbound_items` row (`source = drift_chat`, `captured_by = site_chat`, transcript attached), updated on every new message. The drafts cron drafts John's first follow-up email like a website form. If the assistant flags a hand-off (offer, wants a call, couldn't answer), the item is high priority and an `atm_notifications` escalation is created once.
+- **No live takeover:** nobody answers in the widget; the team follows up by email or phone.
+- **Limits:** 30 turns per chat, 60 turns and 10 new chats per IP per hour (`SITE_CHAT_*` env vars). Model: `CLAUDE_CHAT_MODEL` (default `claude-haiku-4-5`).
+- **Old Drift data:** the 9.5k imported Drift chats stay as they are (`source = drift_chat`, no `captured_by`); the drafts cron skips them.
