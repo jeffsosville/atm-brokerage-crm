@@ -90,6 +90,12 @@ export async function POST(request) {
       updated_at: new Date().toISOString(),
     };
 
+    // Sellers who leave contact details always go straight to the team (alert email + high priority).
+    if (/seller/.test(session.intent || "") && (session.lead_email || session.lead_phone) && !session.escalated) {
+      session.escalated = true;
+      session.escalation_reason = session.intent === "machine_seller" ? "Machine seller left contact details" : "Seller lead: wants to sell, left contact details";
+    }
+
     // A chat with an email or phone becomes a lead in the queue (and gets a drafted follow-up email).
     if (session.lead_email || session.lead_phone) {
       try {
