@@ -3,13 +3,18 @@
      <script src="https://atm-brokerage-crm.vercel.app/chat.js" data-brand="atm" defer></script>
    data-brand: atm | vending | cleaning
    data-teaser: seconds before the "Questions? Ask me" bubble shows (default 12; "off" to disable)
-   data-position: right (default) | left */
+   data-position: right (default) | left
+   data-origin: CRM app URL (only needed if the script is served from somewhere else) */
 (function () {
   if (window.__sosChat) return;
   window.__sosChat = true;
   var s = document.currentScript || document.querySelector('script[src*="/chat.js"]');
   if (!s) return;
-  var origin = new URL(s.src).origin;
+  // The CRM app that serves the chat. If a caching plugin copies this file onto the site itself,
+  // fall back to the CRM so the chat window still loads (data-origin overrides).
+  var src = s.src || s.getAttribute("data-rocket-src") || "";
+  var origin = s.getAttribute("data-origin") ||
+    (/vercel\.app|localhost/.test(src) ? new URL(src, location.href).origin : "https://atm-brokerage-crm.vercel.app");
   var brand = s.getAttribute("data-brand") || "atm";
   var teaserAfter = s.getAttribute("data-teaser");
   var side = s.getAttribute("data-position") === "left" ? "left" : "right";
