@@ -96,6 +96,15 @@ export async function POST(request) {
       session.escalation_reason = session.intent === "machine_seller" ? "Machine seller left contact details" : "Seller lead: wants to sell, left contact details";
     }
 
+    // Machine buyers ready to purchase (how to buy/order, a quote, shipping, installation) who leave
+    // contact details also go straight to the team.
+    const visitorText = history.filter((m) => m.role === "user").map((m) => m.content).join(" ");
+    const wantsToBuy = /\b(buy|buying|purchas\w*|order\w*|quote|checkout|ship\w*|deliver\w*|install\w*|in stock|lead time)\b/i.test(visitorText);
+    if (session.intent === "machine_buyer" && wantsToBuy && (session.lead_email || session.lead_phone) && !session.escalated) {
+      session.escalated = true;
+      session.escalation_reason = "Machine buyer ready to purchase, left contact details";
+    }
+
     // A chat with an email or phone becomes a lead in the queue (and gets a drafted follow-up email).
     if (session.lead_email || session.lead_phone) {
       try {
