@@ -2,15 +2,22 @@
    Add to the site, before </body>:
      <script src="https://atm-brokerage-crm.vercel.app/chat.js" data-brand="atm" defer></script>
    data-brand: atm | vending | cleaning
-   data-teaser: seconds before the "Questions? Ask me" bubble shows (default 12; "off" to disable) */
+   data-teaser: seconds before the "Questions? Ask me" bubble shows (default 12; "off" to disable)
+   data-position: right (default) | left
+   data-origin: CRM app URL (only needed if the script is served from somewhere else) */
 (function () {
   if (window.__sosChat) return;
   window.__sosChat = true;
   var s = document.currentScript || document.querySelector('script[src*="/chat.js"]');
   if (!s) return;
-  var origin = new URL(s.src).origin;
+  // The CRM app that serves the chat. If a caching plugin copies this file onto the site itself,
+  // fall back to the CRM so the chat window still loads (data-origin overrides).
+  var src = s.src || s.getAttribute("data-rocket-src") || "";
+  var origin = s.getAttribute("data-origin") ||
+    (/vercel\.app|localhost/.test(src) ? new URL(src, location.href).origin : "https://atm-brokerage-crm.vercel.app");
   var brand = s.getAttribute("data-brand") || "atm";
   var teaserAfter = s.getAttribute("data-teaser");
+  var side = s.getAttribute("data-position") === "left" ? "left" : "right";
   var ACCENT = { atm: "#3b82f6", vending: "#d97706", cleaning: "#059669" }[brand] || "#3b82f6";
   var Z = 2147483000;
   var ss = {
@@ -20,12 +27,12 @@
 
   var css = document.createElement("style");
   css.textContent =
-    "#sos-chat-btn{position:fixed;right:20px;bottom:20px;width:58px;height:58px;border-radius:50%;border:0;cursor:pointer;background:" + ACCENT + ";box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:" + Z + ";display:flex;align-items:center;justify-content:center;padding:0}" +
+    "#sos-chat-btn{position:fixed;" + side + ":20px;bottom:20px;width:58px;height:58px;border-radius:50%;border:0;cursor:pointer;background:" + ACCENT + ";box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:" + Z + ";display:flex;align-items:center;justify-content:center;padding:0}" +
     "#sos-chat-btn svg{width:28px;height:28px}" +
-    "#sos-chat-panel{position:fixed;right:20px;bottom:90px;width:380px;height:min(600px,calc(100vh - 110px));border-radius:14px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:" + Z + ";display:none;background:#fff}" +
+    "#sos-chat-panel{position:fixed;" + side + ":20px;bottom:90px;width:380px;height:min(600px,calc(100vh - 110px));border-radius:14px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:" + Z + ";display:none;background:#fff}" +
     "#sos-chat-panel iframe{width:100%;height:100%;border:0}" +
-    "#sos-chat-teaser{position:fixed;right:88px;bottom:30px;max-width:230px;background:#fff;color:#111827;font:14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;padding:10px 14px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:" + Z + ";cursor:pointer;display:none}" +
-    "@media (max-width:480px){#sos-chat-panel{right:0;bottom:0;width:100%;height:100%;border-radius:0}#sos-chat-panel.open~#sos-chat-btn{display:none}}";
+    "#sos-chat-teaser{position:fixed;" + side + ":88px;bottom:30px;max-width:230px;background:#fff;color:#111827;font:14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;padding:10px 14px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:" + Z + ";cursor:pointer;display:none}" +
+    "@media (max-width:480px){#sos-chat-panel{left:0;right:0;bottom:0;width:100%;height:100%;border-radius:0}#sos-chat-panel.open~#sos-chat-btn{display:none}}";
   document.head.appendChild(css);
 
   var panel = document.createElement("div");

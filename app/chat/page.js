@@ -96,7 +96,7 @@ export default function ChatPage() {
 
       <div style={S.body}>
         <div style={S.bot}>
-          Hi! Looking to buy or sell a {b.noun}? I can answer questions about our listings{brand === "atm" ? " and ATM machines" : ""}.
+          Hi! Looking to buy or sell {/^[aeiou]/i.test(b.noun) ? "an" : "a"} {b.noun}? I can answer questions about our listings{brand === "atm" ? " and ATM machines" : ""}.
         </div>
         {messages.map((m, i) => (
           <div key={i} style={m.role === "user" ? { ...S.me, background: accent } : S.bot}>

@@ -71,7 +71,7 @@ export async function POST(request) {
       visitor_id: existing?.visitor_id || (typeof visitorId === "string" ? visitorId.slice(0, 64) : null),
       brand: existing?.brand || brand,
       page_url: pageUrl,
-      page_title: existing?.page_title || page?.route?.title || page?.listing?.title || null,
+      page_title: existing?.page_title || page?.route?.title || page?.listing?.title || page?.title || null,
       route_id: existing?.route_id || page?.route?.id || null,
       deal_id: existing?.deal_id || page?.route?.deal_id || page?.listing?.crm_deal_id || null,
       ip_hash: ip,
