@@ -2,6 +2,7 @@ import { adminDb as db } from "../../../../lib/serverAuth";
 import { mailboxes } from "../../../../lib/mailboxes";
 import { preFilter, classifyEmail, mapQuestionToDD, NON_ACTIONABLE, INTERNAL } from "../../../../lib/inbox/classify";
 import { dueAtFor } from "../../../../lib/inbox/sla";
+import { runAlerts } from "../../../../lib/inbox/alerts";
 import { parseMarketplaceLead, resolveMarketplaceLead, marketplaceReply, shouldAutoReply, sendMarketplaceReply } from "../../../../lib/inbox/marketplace";
 
 export const dynamic = "force-dynamic";
@@ -459,6 +460,9 @@ async function run() {
       stats.marked_replied++;
     }
   }
+
+  // ---- 4. Alerts: mail sync stopped, new inquiries unanswered ------------------
+  await runAlerts(stats);
 
   return stats;
 }
