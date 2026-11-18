@@ -90,6 +90,7 @@ export async function GET(request) {
     if (NEEDS_REPLY.includes(i.status)) {
       p.needs_reply = (p.needs_reply || 0) + 1;
       if (i.priority === "high") p.high = true;
+      if (i.received_at && (!p.newest_waiting || i.received_at > p.newest_waiting)) p.newest_waiting = i.received_at;
       if (i.due_at && (!p.next_due || i.due_at < p.next_due)) { p.next_due = i.due_at; p.next_what = i.summary || i.subject || null; p.next_kind = i.kind; }
     }
     touch(p, i.received_at);
@@ -117,9 +118,9 @@ export async function GET(request) {
   if (type === "buyers") rows = rows.filter((p) => p.roles.includes("buyer"));
   if (type === "sellers") rows = rows.filter((p) => p.roles.includes("seller"));
   if (type === "open") {
-    // The reply queue: people with something waiting on us, most overdue first
+    // The reply queue: people with something waiting on us, newest first
     rows = rows.filter((p) => p.needs_reply > 0);
-    rows.sort((a, b) => (b.high ? 1 : 0) - (a.high ? 1 : 0) || (a.next_due || "9").localeCompare(b.next_due || "9"));
+    rows.sort((a, b) => (b.newest_waiting || "").localeCompare(a.newest_waiting || ""));
   } else if (type === "nda") {
     // BizBuySell and other leads that got the NDA link and haven't signed yet
     rows = rows.filter((p) => p.awaiting_nda > 0 && !p.needs_reply);
@@ -133,7 +134,7 @@ export async function GET(request) {
   const rIds = [...new Set(unmatched.map((i) => i.route_id).filter(Boolean))];
   const { data: rts } = rIds.length ? await db.from("atm_routes").select("id, slug, title").in("id", rIds) : { data: [] };
   const rmap = Object.fromEntries((rts || []).map((r) => [r.id, r]));
-  unmatched.sort((a, b) => (a.due_at || "9").localeCompare(b.due_at || "9"));
+  unmatched.sort((a, b) => (b.received_at || "").localeCompare(a.received_at || ""));
   counts.open += unmatched.length;
 
   return Response.json({
