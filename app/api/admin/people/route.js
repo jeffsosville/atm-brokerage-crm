@@ -1,7 +1,7 @@
 import { adminDb as db, getUser, unauthorized } from "../../../../lib/serverAuth";
 import { verticalFromRequest, verticalMaps } from "../../../../lib/verticalServer";
 import { isOwnAddress, personEmailFor } from "../../../../lib/ownAddresses";
-import { mailboxes, itemLinks } from "../../../../lib/mailboxes";
+import { mailboxes, itemLinks, withThreadAddrs } from "../../../../lib/mailboxes";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -139,6 +139,6 @@ export async function GET(request) {
 
   return Response.json({
     total: rows.length, counts, people: rows.slice(0, 500),
-    unmatched: type === "open" ? await (async () => { const boxes = await mailboxes(); return unmatched.map((i) => ({ ...i, ...itemLinks(boxes, i), route: rmap[i.route_id] || null, vertical: slugById[i.vertical_id] || null })); })() : [],
+    unmatched: type === "open" ? await (async () => { const boxes = await mailboxes(); return (await withThreadAddrs(unmatched)).map((i) => ({ ...i, ...itemLinks(boxes, i), route: rmap[i.route_id] || null, vertical: slugById[i.vertical_id] || null })); })() : [],
   });
 }
