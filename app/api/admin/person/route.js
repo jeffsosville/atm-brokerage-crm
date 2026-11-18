@@ -1,5 +1,6 @@
 import { adminDb as db, getUser, unauthorized } from "../../../../lib/serverAuth";
 import { verticalMaps } from "../../../../lib/verticalServer";
+import { shouldDraft } from "../../../../lib/inbox/draft";
 import { mailboxes, emailLink, itemLinks, withThreadAddrs } from "../../../../lib/mailboxes";
 
 export const dynamic = "force-dynamic";
@@ -105,7 +106,7 @@ export async function GET(request) {
       seller: items.some((i) => i.kind === "seller_lead"),
       buyer: (nda.data || []).length > 0 || tokens.length > 0 || items.some((i) => ["buyer_question", "data_room", "marketplace_lead", "offer"].includes(i.kind)),
     },
-    open: (await withThreadAddrs(items.filter((i) => OPEN.includes(i.status)))).map((i) => ({ ...i, ...itemLinks(boxes, i), route: rmap[i.route_id] || null, vertical: slugById[i.vertical_id] || null })),
+    open: (await withThreadAddrs(items.filter((i) => OPEN.includes(i.status)))).map((i) => ({ ...i, ...itemLinks(boxes, i), can_draft: shouldDraft(i), route: rmap[i.route_id] || null, vertical: slugById[i.vertical_id] || null })),
     timeline: timeline.slice(0, 300),
   });
 }

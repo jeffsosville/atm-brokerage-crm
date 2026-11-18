@@ -67,7 +67,7 @@ export function OpenItem({ i, onChange }) {
       <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
         {g && <a href={g} target="_blank" rel="noreferrer" style={btn(true)}>Open in Gmail</a>}
         {i.draft_text && <button style={btn(false)} onClick={() => { navigator.clipboard?.writeText(i.draft_text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "Copied" : "Copy draft"}</button>}
-        {DRAFTABLE.includes(i.kind) && <button style={btn(false)} disabled={!!busy} onClick={() => act({ action: "redraft" }, "d")}>{busy === "d" ? "Drafting…" : i.draft_text ? "Redraft" : "Draft a reply"}</button>}
+        {DRAFTABLE.includes(i.kind) && i.can_draft !== false && <button style={btn(false)} disabled={!!busy} onClick={() => act({ action: "redraft" }, "d")}>{busy === "d" ? "Drafting…" : i.draft_text ? "Redraft" : "Draft a reply"}</button>}
         <button style={btn(false)} disabled={!!busy} onClick={() => act({ status: "replied" }, "r")}>Mark replied</button>
         <button style={btn(false)} disabled={!!busy} onClick={() => { const r = prompt("Why is this not a lead?"); if (r !== null) act({ status: "not_a_lead", closed_reason: r || "not a lead" }, "n"); }}>Not a lead</button>
       </div>
